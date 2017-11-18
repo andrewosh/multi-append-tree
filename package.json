@@ -1,0 +1,26 @@
+{
+  "name": "multi-append-tree",
+  "version": "0.0.1",
+  "description": " Manage multiple append-trees overlaid on top of each other at different mount points. ",
+  "main": "index.js",
+  "scripts": {
+    "test": "node test/*.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/andrewosh/multi-append-tree.git"
+  },
+  "keywords": [
+    "append-tree",
+    "overlay"
+  ],
+  "author": "Andrew Osheroff <andrewosh@gmail.com>",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/andrewosh/multi-append-tree/issues"
+  },
+  "homepage": "https://github.com/andrewosh/multi-append-tree#readme",
+  "dependencies": {
+    "append-tree": "^2.4.0"
+  }
+}
