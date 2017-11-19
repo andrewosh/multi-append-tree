@@ -21,6 +21,8 @@
   },
   "homepage": "https://github.com/andrewosh/multi-append-tree#readme",
   "dependencies": {
-    "append-tree": "^2.4.0"
+    "append-tree": "^2.4.0",
+    "async-each": "^1.0.1",
+    "stream-collector": "^1.0.1"
   }
 }

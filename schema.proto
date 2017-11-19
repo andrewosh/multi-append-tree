@@ -1,0 +1,35 @@
+message IndexNode {
+  enum Type {
+    LINK = 1;
+    LAYER = 3;
+  }
+  required Type type = 1;
+  optional Link link = 2; 
+  optional Layer layer = 3;
+}
+
+message LinkMetadataNode {
+  required string key = 1;
+  required uint32 id = 2;
+  optional uint64 version = 3;
+  optional bool live = 4;
+  optional bool versioned = 5;
+}
+
+message UpdateNode {
+  message LinkVersion  {
+    required uint32 id;
+    required uint64 version;
+  }
+  required uint32 id = 1;
+  repeated LinkVersion versions = 2;
+}
+
+message Link {
+  required string path = 1;
+  required uint32 id = 2;
+}
+
+message Layer {
+  required uint32 id = 1;
+}
