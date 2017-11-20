@@ -118,38 +118,6 @@ MultiTree.prototype._inflateLink = function (id, cb) {
   })
 }
 
-MultiTree.prototype.ready = function (cb) {
-  var self = this
-  this._tree.ready(function (err) {
-    if (err) return cb(err)
-    self._syncIndex(function (err) {
-      return cb(err)
-    })
-  })
-}
-
-MultiTree.prototype.put = function (name, value, cb) {
-  // Always insert into the most recent layer.
-  // If there aren't any layers, create a base layer.
-  var self = this
-  this.ready(function (err) {
-    if (err) return cb(err)
-    })
-  })
-}
-
-MultiTree.prototype.list = function (name, opts, cb) { }
-
-MultiTree.prototype.get = function (name, opts, cb) { }
-
-MultiTree.prototype.checkout = function (seq, opts) { }
-
-MultiTree.prototype.del = function (name, cb) { }
-
-MultiTree.prototype.head = function (opts, cb) { }
-
-MultiTree.prototype.history = null
-
 MultiTree.prototype._registerArchive = function (meta, cb) {
   if (typeof opts === 'function') return self._createNewArchive(meta, {}, opts)
   var self = this
@@ -174,6 +142,104 @@ MultiTree.prototype._registerArchive = function (meta, cb) {
   })
 }
 
+MultiTree.prototype._ensureLayer = function (cb) {
+  var self = this
+  this.ready(function (err) {
+    if (err) return cb(err)
+    if (!self.currentLayer) return self.pushLayer(cb)
+    return cb(null)
+  })
+}
+
+MultiTree.prototype._writeUpdate = function (name, versioned, cb) {
+  var self = this
+  this._ensureLayer(function (err) {
+    if (err) return cb(err)
+    // TODO: handle "versioned" writes, and come up with a better term.
+    var update = messages.UpdateNode.encode({
+      id: self.currentLayer.id
+    })
+    self.tree.put(name, update, function (err) {
+      return cb(err)
+    })
+  }
+}
+
+MultiTree.prototype.ready = function (cb) {
+  var self = this
+  this._tree.ready(function (err) {
+    if (err) return cb(err)
+    self._syncIndex(function (err) {
+      return cb(err)
+    })
+  })
+}
+
+MultiTree.prototype.put = function (name, value, versioned, cb) {
+  if (typeof versioned === 'function') return this.put(name, value, false, versioned)
+  this._writeUpdate(name, versioned, function  (err) {
+    if (err) return cb(err)
+    self.currentLayer.tree.put(name, value, cb)
+  })
+}
+
+MultiTree.prototype.del = function (name, versioned, cb) {
+  if (typeof versioned === 'function') return this.del(name, false, versioned)
+  this._writeUpdate(name, versioned, function  (err) {
+    if (err) return cb(err)
+    self.currentLayer.tree.del(name, cb)
+  })
+}
+
+MultiTree.prototype.list = function (name, opts, cb) {
+  if (typeof opts === 'function') return this.list(name, {}, opts)
+  var self = this
+  this._ensureLayer(function (err) {
+    if (err) return cb(err)
+    self.tree.list(name, function (err, contents) {
+      if (err) return cb(err)
+      map(self.parents, function (parent, next) {
+        parent.tree.list(name, function (err, parentContents) {
+          if (err && err.notFound) return next(null)
+          if (err) return next(err)
+          return next(null, parentContents)
+        })
+       }, function (err, entries) {
+         return cb(null, entries.reduce(function (a, b) { return a.concat(b) }, []))
+      })
+    })
+  }
+}
+
+MultiTree.prototype.get = function (name, opts, cb) {
+  if (typeof opts === 'function') return this.get(name, {}, opts)
+  ver self = this
+  this._ensureLayer(function (err) {
+    if (err) return cb(err)
+    self.tree.get(name, function (err, entry) {
+      if (err && err.notFound) {
+        return map(self.parents, function (parent, next) {
+          parent.tree.get(name, function (err, parentEntry) {
+            if (err && err.notFound) return next(null)
+            if (err) return next(err)
+            return next(null, parentEntry)
+          })
+         }, function (err, entries) {
+           return cb(null, entries)
+        })
+      }
+      if (err) return cb(err)
+      return cb(null, entry)
+    })
+  })
+}
+
+MultiTree.prototype.checkout = function (seq, opts) { }
+
+MultiTree.prototype.head = function (opts, cb) { }
+
+MultiTree.prototype.history = null
+
 MultiTree.prototype.link = function (name, target, opts, cb) {
   if (typeof opts === 'function') return self.link(name, target, {}, opts)
   // Only register an archive if an existing one with the same fields doesn't exist.
@@ -183,7 +249,7 @@ MultiTree.prototype.link = function (name, target, opts, cb) {
     if (existing) return createlink(existing.id)
     self._registerArchive(Object.assign({ key: target }, opts), function (err, meta) {
       if (err) return cb(err)
-      return self.put(name, messages.Link.encode({ path: name, id: meta.id }), function (err) {
+      return self.put(name, messages.Link.encode({ id: meta.id }), function (err) {
         return cb(err)
       })  
     })

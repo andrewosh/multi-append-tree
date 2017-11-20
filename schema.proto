@@ -16,16 +16,15 @@ message ArchiveMetadataNode {
 }
 
 message UpdateNode {
+  enum Type {
+    LAYER_UPDATE = 1;
+    LINK = 2;
+  }
   message ArchiveVersion  {
     required uint32 id;
     required uint64 version;
   }
-  required uint32 id = 1;
-  optional string path = 2;
-  repeated ArchiveVersion versions = 3;
-}
-
-message Link {
-  required string path = 1;
+  required Type type = 1;
   required uint32 id = 2;
+  repeated ArchiveVersion versions = 3;
 }
