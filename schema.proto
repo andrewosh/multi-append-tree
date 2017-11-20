@@ -9,7 +9,7 @@ message IndexNode {
 }
 
 message LinkMetadataNode {
-  required string key = 1;
+  required bytes key = 1;
   required uint32 id = 2;
   optional uint64 version = 3;
   optional bool live = 4;

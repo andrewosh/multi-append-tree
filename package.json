@@ -23,6 +23,7 @@
   "dependencies": {
     "append-tree": "^2.4.0",
     "async-each": "^1.0.1",
+    "async-series": "0.0.1",
     "stream-collector": "^1.0.1"
   }
 }
