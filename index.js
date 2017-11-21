@@ -12,9 +12,9 @@ var PARENT_ROOT = '/parents'
 var ARCHIVE_METADATA_ROOT = '/metadata'
 var ENTRIES_ROOT = '/entries'
 
-function MultiTree (feed, treeFactory, opts) {
-  if (!(this instanceof MultiTree)) return new MultiTree(feed, factory, opts)
-  if (!feed) throw new Error('Feed must be non-null.')
+function MultiTree (tree, factory, opts) {
+  if (!(this instanceof MultiTree)) return new MultiTree(tree, factory, opts)
+  if (!tree) throw new Error('Metadata append-tree must be non-null.')
   if (!factory || !(typeof factory === 'function')) throw new Error('Factory must be a non-null function that returns append-trees.')
   if (!opts) opts = {}
   this.opts = opts
@@ -22,8 +22,8 @@ function MultiTree (feed, treeFactory, opts) {
   events.EventEmitter.call(this)
 
   this.checkout = opts.checkout
-  this.feed = feed
-  this._tree = tree(feed, opts)
+  this._factory = factory
+  this._tree = tree
   this._parents = opts.parents || []
   this._offset = opts.offset || 0
 
@@ -71,6 +71,13 @@ MultiTree.prototype._syncIndex = function (cb) {
           } else {
             Object.assign(existingMeta, archiveMeta)
           }
+          if (archiveMeta.parent) {
+            // Parents should be immediately inflated.
+            self._inflateLink(archiveMeta.id, true, function (err) {
+              if (err) return next(err)
+              return next(null, archiveMeta)
+            })
+          }
           return next(null, archiveMeta)
         })
       }, function (err, archiveMetas) {
@@ -106,11 +113,12 @@ MultiTree.prototype._syncIndex = function (cb) {
   })
 }
 
-MultiTree.prototype._inflateLink = function (id, cb) {
+MultiTree.prototype._inflateLink = function (id, isMulti, cb) {
   var meta = this.linkIndex[id]
   if (!meta) return cb(new Error('Trying to inflate a nonexistent link.'))
   var opts = meta.version ? : { version: meta.version } : null
-  var linkTree = this.factory(meta.key, opts)
+  var appendTree = this.factory(meta.key, opts)
+  var linkTree = (isMulti) ? MultiTree(appendTree, this._factory) : appendTree
   linkTree.ready(function (err) {
     if (err) return cb(err)
     meta.tree = linkTree
@@ -127,7 +135,7 @@ MultiTree.prototype._registerArchive = function (meta, cb) {
     var subtree = (meta.key) ? self.factory(meta.key, meta.version) : self.factory()
     subtree.ready(function (err) {
       if (err) return cb(err)
-      // TODO: maybe should net edit meta in place?
+      // TODO: maybe should not edit meta in place?
       if (!meta.key) meta.key = subtree.feed.key
       meta.id = id
       self.archiveIndex[id] = meta
