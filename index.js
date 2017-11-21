@@ -8,7 +8,6 @@ var tree = require('append-tree')
 
 module.exports = MultiTree
 
-var PARENT_ROOT = '/parents'
 var ARCHIVE_METADATA_ROOT = '/metadata'
 var ENTRIES_ROOT = '/entries'
 
@@ -29,11 +28,9 @@ function MultiTree (tree, factory, opts) {
 
   // Set during initial indexing.
   this.version = null
-  this.currentLayer = null
   this.parents = []
-
-  self._processed = 0
-  this.linkIndex = []
+  this.archiveIndex = []
+  this._processed = 0
 
   this.ready(function (err) {
     if (!err) self.emit('ready')
@@ -41,10 +38,6 @@ function MultiTree (tree, factory, opts) {
 }
 
 inherits(MultiTree, events.EventEmitter)
-
-MultiTree.prototype._parentPath = function (path) {
-  return p.join(PARENT_ROOT, path)
-}
 
 MultiTree.prototype._archiveMetadataPath = function (path) {
   return p.join(ARCHIVE_METADATA_ROOT, path)
@@ -147,15 +140,6 @@ MultiTree.prototype._registerArchive = function (meta, cb) {
           return cb(null, meta)
         })
     })
-  })
-}
-
-MultiTree.prototype._ensureLayer = function (cb) {
-  var self = this
-  this.ready(function (err) {
-    if (err) return cb(err)
-    if (!self.currentLayer) return self.pushLayer(cb)
-    return cb(null)
   })
 }
 

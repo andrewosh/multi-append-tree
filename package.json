@@ -26,5 +26,8 @@
     "async-series": "0.0.1",
     "lodash.find": "^4.6.0",
     "stream-collector": "^1.0.1"
+  },
+  "devDependencies": {
+    "standard": "^10.0.3"
   }
 }
