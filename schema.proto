@@ -1,3 +1,9 @@
+message Node {
+  required string name = 1;
+  optional bytes value = 2;
+  optional bytes paths = 3;
+}
+
 message LinkNode {
   required bytes key = 1;
   required uint64 node = 2;

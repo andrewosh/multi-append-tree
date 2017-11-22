@@ -1,11 +1,10 @@
 var p = require('path')
 var events = require('events')
 var map = require('async-each')
-var find = require('lodash.find')
-var collect = require('stream-collector')
 var lock = require('mutexify')
+var inherits = require('inherits')
+var datEncoding = require('dat-encoding')
 var messages = require('./messages')
-var tree = require('append-tree')
 
 module.exports = MultiTree
 
@@ -27,8 +26,8 @@ function MultiTree (tree, factory, opts) {
   this._lock = lock()
 
   // Set during initial indexing.
+  this._parents = []
   this.version = null
-  this.parents = []
 
   // Inflated archives.
   this.archives = {}
@@ -36,6 +35,7 @@ function MultiTree (tree, factory, opts) {
   // Link nodes we've encountered (minimizes link reads).
   this.links = {}
 
+  var self = this
   this.ready(function (err) {
     if (!err) self.emit('ready')
   })
@@ -54,7 +54,7 @@ MultiTree.prototype._entriesPath = function (path) {
 MultiTree.prototype._inflateArchive = function (id, isMulti, cb) {
   var meta = this.archives[id]
   if (!meta) return cb(new Error('Trying to inflate a nonexistent link.'))
-  var opts = meta.version ? : { version: meta.version } : null
+  var opts = meta.version ? { version: meta.version } : null
   var appendTree = this.factory(meta.key, opts)
   var linkTree = (isMulti) ? MultiTree(appendTree, this._factory) : appendTree
   linkTree.ready(function (err) {
@@ -69,11 +69,14 @@ MultiTree.prototype._getParentTrees = function (cb) {
   // TODO: this path request and the subsequent list request should be atomic.
   // WARNING: possible race condition in _parentsNode if these ops aren't atomic.
   this._tree.path(PARENTS_ROOT, function (err, path) {
+    if (err && err.notFound) return cb(null, [])
+    if (err) return cb(err)
     if (self._parentsNode && (self._parentsNode === path[0])) {
       // The list of parents hasn't changed, so the node indices can be reused.
       return onnodes()
     }
     self._tree.list(PARENTS_ROOT, function (err, parentNames) {
+      if (err && err.notFound) return cb(null, [])
       if (err) return cb(err)
       self._parentsNode = path[0]
       self._parents = []
@@ -97,14 +100,16 @@ MultiTree.prototype._getParentTrees = function (cb) {
 }
 
 MultiTree.prototype._getTreeForNode = function (node, cb) {
-  var link = self.links[nodeIndex]
+  var self = this
+  var link = this.links[node]
   if (link) return onlink(link)
-  self._readLink(name, function (err, link) {
+  this._readLink(node, true, function (err, link) {
+    if (err && err.notFound) return cb(null)
     if (err) return cb(err)
     return onlink(link)
   })
   function onlink (link) {
-    if (link.tree) return cb(null, link.tree)  
+    if (link.tree) return cb(null, link.tree)
     self._inflateArchive(link.key, link.version, function (err, tree) {
       if (err) return cb(err)
       link.tree = tree
@@ -114,9 +119,11 @@ MultiTree.prototype._getTreeForNode = function (node, cb) {
 }
 
 MultiTree.prototype._findLinkTrees = function (name, readParents, cb) {
+  var self = this
   this.ready(function (err) {
     if (err) return cb(err)
-    this._tree.path(name, function (err, path) {
+    self._tree.path(name, function (err, path) {
+      if (err && err.notFound) return cb(null, [])
       if (err) return cb(err)
       var nodeIndex = path[path.length - 1]
       self._getTreeForNode(nodeIndex, function (err, tree) {
@@ -124,9 +131,11 @@ MultiTree.prototype._findLinkTrees = function (name, readParents, cb) {
         if (!readParents) return cb(null, [tree])
         self._getParentTrees(function (err, trees) {
           if (err) return cb(err)
-          return cb(null, trees.push(tree))
+          if (tree) trees.push(tree)
+          return cb(null, trees)
         })
       })
+    })
   })
 }
 
@@ -142,17 +151,36 @@ MultiTree.prototype._writeLink = function (name, target, cb) {
   })
 }
 
-MultiTree.prototype._readLink = function (name, cb) {
+MultiTree.prototype._readLink = function (name, isNode, cb) {
   var self = this
   this._tree.ready(function (err) {
     if (err) return cb(err)
-    self._tree.get(name, function (err, value) {
+    if (!isNode) {
+      return self._tree.get(name, function (err, value) {
+        if (err) return cb(err)
+        return onlink(value)
+      })
+    }
+    // TODO: this is probably not kosher...
+    // This is the only spot where the append-tree abstraction breaks down.
+    // messages.Node is copied from append-tree -- peer dependency makes more sense.
+    self._tree.feed.get(name, function (err, bytes) {
       if (err) return cb(err)
-      var link = messages.LinkNode.decode(value)
-      self.links[link.node] = link
-      return cb(null, link)
+      var outer = messages.Node.decode(bytes)
+      return onlink(outer.value)
     })
   })
+  function onlink (rawLink) {
+    try {
+      var link = messages.LinkNode.decode(rawLink)
+    } catch (err) {
+      // If there's an error, then this is not a link node.
+      err.notFound = true
+      return cb(err)
+    }
+    self.links[link.node] = link
+    return cb(null, link)
+  }
 }
 
 MultiTree.prototype.ready = function (cb) {
@@ -188,34 +216,31 @@ MultiTree.prototype.link = function (name, target, cb) {
   })
 }
 
-MultiTree.prototype._parentMap = function (trees, mapFunc, cb) {
-  var parentTrees = trees.slice(0, self._parents.length)
-  map(parentTrees, mapFunc, cb)
-}
-
-MultiTree.prototype._treesWrapper = function (name, includeParents, func) {
+MultiTree.prototype._treesWrapper = function (name, includeParents, cb) {
   var self = this
   this.ready(function (err) {
     if (err) return cb(err)
-    self._findLinkTrees(name, includeParents, func)
+    self._findLinkTrees(name, includeParents, cb)
   })
 }
 
 MultiTree.prototype.put = function (name, value, cb) {
   var self = this
   this._treesWrapper(name, false, function (err, trees) {
+    if (err) return cb(err)
     if (trees.length === 0) return self._tree.put(name, value, cb)
     if (trees.length > 1) return cb(new Error('Trying to write to multiple symlinks.'))
-    return trees[0].put(name, value, cb) 
+    return trees[0].put(name, value, cb)
   })
 }
 
 MultiTree.prototype.del = function (name, cb) {
   var self = this
   this._treesWrapper(name, false, function (err, trees) {
+    if (err) return cb(err)
     if (trees.length === 0) return self._tree.del(name, cb)
     if (trees.length > 1) return cb(new Error('Trying to delete from multiple symlinks.'))
-    return trees[0].del(name, cb) 
+    return trees[0].del(name, cb)
   })
 }
 
@@ -227,8 +252,9 @@ MultiTree.prototype.list = function (name, opts, cb) {
   this._treesWrapper(name, true, function (err, trees) {
     if (err) return cb(err)
     if (trees.length <= self._parents.length) {
-      return map(trees.push(self._tree), function (tree, next) {
-        return tree.list(next)
+      trees.push(self._tree)
+      return map(trees, function (tree, next) {
+        return tree.list(name, opts, next)
       }, function (err, lists) {
         if (err) return cb(err)
         // Take the union of the parents and self trees.
@@ -246,8 +272,7 @@ MultiTree.prototype.get = function (name, opts, cb) {
   this._treesWrapper(name, true, function (err, trees) {
     if (err) return cb(err)
     if (trees.length > self._parents.length) {
-      if (trees.length - self._parents.length > 1)
-        return cb(new Error('Trying to get from multiple symlinks.'))
+      if (trees.length - self._parents.length > 1) { return cb(new Error('Trying to get from multiple symlinks.')) }
       return trees[trees.length - 1].get(name, opts, cb)
     }
     self._tree.get(name, opts, function (err, selfValue) {
@@ -257,7 +282,7 @@ MultiTree.prototype.get = function (name, opts, cb) {
         return tree.get(name, opts, function (err, parentResult) {
           if (err && !err.notFound) return cb(err)
           return cb(null, parentResult)
-        }
+        })
       }, function (err, parentResults) {
         if (err) return cb(err)
         var nonNullResults = parentResults.filter(function (x) { return x })
@@ -270,7 +295,7 @@ MultiTree.prototype.get = function (name, opts, cb) {
         // Conflict resolution handled by user.
         return cb(null, nonNullResults)
       })
-    }) 
+    })
   })
 }
 
@@ -282,5 +307,8 @@ MultiTree.prototype.history = null
 
 function listUnion (lists) {
   // TODO: probably too many allocations.
-  return Array.from(new Set(lists.reduce(function (l, item) { return l.push(item) }, [])))
+  return Array.from(new Set(lists.reduce(function (l, item) {
+    l.concat(item)
+    return l
+  })))
 }

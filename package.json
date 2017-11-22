@@ -1,10 +1,11 @@
 {
   "name": "multi-append-tree",
   "version": "0.0.1",
-  "description": " Manage multiple append-trees overlaid on top of each other at different mount points. ",
+  "description": " An append-tree that supports mounting sub-trees as symlinks or layers.",
   "main": "index.js",
   "scripts": {
-    "test": "node test/*.js"
+    "test": "npm run format && tape test/*.js",
+    "format": "standard && dependency-check . && dependency-check --unused --no-dev --ignore-module append-tree ."
   },
   "repository": {
     "type": "git",
@@ -23,13 +24,19 @@
   "dependencies": {
     "append-tree": "^2.4.0",
     "async-each": "^1.0.1",
-    "async-series": "0.0.1",
     "dat-encoding": "^4.0.2",
-    "lodash.find": "^4.6.0",
+    "inherits": "^2.0.3",
     "mutexify": "^1.2.0",
-    "stream-collector": "^1.0.1"
+    "protocol-buffers": "^3.2.1"
   },
   "devDependencies": {
-    "standard": "^10.0.3"
+    "dependency-check": "^2.9.1",
+    "hypercore": "^6.11.0",
+    "random-access-memory": "^2.4.0",
+    "standard": "^10.0.3",
+    "tape": "^4.8.0"
+  },
+  "peerDependencies": {
+    "append-tree": "~2.0"
   }
 }
