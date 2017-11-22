@@ -130,25 +130,21 @@ MultiTree.prototype._findLinkTrees = function (name, readParents, cb) {
   })
 }
 
-MultiTree.prototype._findReadTrees = function (name, cb) {
-  
-}
-
-MultiTree.prototype._writeLink = function (name, meta, cb) {
+MultiTree.prototype._writeLink = function (name, target, cb) {
   var self = this
-  this.ready(function (err) {
+  this._tree.ready(function (err) {
     if (err) return cb(err)
     self._lock(function (err) {
       if (err) return cb(err)
-      meta.node = self._tree.version + 1
-      self._tree.put(name, messages.LinkNode.encode(meta), cb)
+      target.node = self._tree.version + 1
+      self._tree.put(name, messages.LinkNode.encode(target), cb)
     })
   })
 }
 
 MultiTree.prototype._readLink = function (name, cb) {
   var self = this
-  this.ready(function (err) {
+  this._tree.ready(function (err) {
     if (err) return cb(err)
     self._tree.get(name, function (err, value) {
       if (err) return cb(err)
@@ -163,70 +159,118 @@ MultiTree.prototype.ready = function (cb) {
   var self = this
   this._tree.ready(function (err) {
     if (err) return cb(err)
-    // Index/inflate the parent archives
     if (self.opts.parents) {
-      if (self._tree.version > 0)) {
-        return cb(new Error('Cannot add parents to an existing tree."))
-      }
-      c
-    }
-
-  })
-}
-
-MultiTree.prototype.put = function (name, value, cb) {
-  var path = this._tree.path(name)
-
-}
-
-MultiTree.prototype.del = function (name, cb) {
-  if (typeof versioned === 'function') return this.del(name, false, versioned)
-  this._writeUpdate(name, versioned, function  (err) {
-    if (err) return cb(err)
-    self.currentLayer.tree.del(name, cb)
-  })
-}
-
-MultiTree.prototype.list = function (name, opts, cb) {
-  if (typeof opts === 'function') return this.list(name, {}, opts)
-  var self = this
-  this._ensureLayer(function (err) {
-    if (err) return cb(err)
-    self.tree.list(name, function (err, contents) {
-      if (err) return cb(err)
-      map(self.parents, function (parent, next) {
-        parent.tree.list(name, function (err, parentContents) {
-          if (err && err.notFound) return next(null)
-          if (err) return next(err)
-          return next(null, parentContents)
+      return map(self.opts.parents, function (parent, next) {
+        self._writeLink(datEncoding.decode(parent.key), parent, function (err) {
+          if (err) return cb(err)
         })
-       }, function (err, entries) {
-         return cb(null, entries.reduce(function (a, b) { return a.concat(b) }, []))
+      }, function (err) {
+        if (err) return cb(err)
+        getparents()
       })
+    }
+    getparents()
+  })
+  function getparents () {
+    // Index/inflate the parents eagerly (because this is required for every read).
+    self._getParentTrees(function (err) {
+      if (err) return cb(err)
+      return cb(null)
     })
   }
 }
 
-MultiTree.prototype.get = function (name, opts, cb) {
-  if (typeof opts === 'function') return this.get(name, {}, opts)
-  ver self = this
-  this._ensureLayer(function (err) {
+MultiTree.prototype.link = function (name, target, cb) {
+  var self = this
+  this.ready(function (err) {
     if (err) return cb(err)
-    self.tree.get(name, function (err, entry) {
-      if (err && err.notFound) {
-        return map(self.parents, function (parent, next) {
-          parent.tree.get(name, function (err, parentEntry) {
-            if (err && err.notFound) return next(null)
-            if (err) return next(err)
-            return next(null, parentEntry)
-          })
-         }, function (err, entries) {
-           return cb(null, entries)
-        })
-      }
-      if (err) return cb(err)
-      return cb(null, entry)
-    })
+    return self._writeLink(name, target, cb)
+  })
+}
+
+MultiTree.prototype._parentMap = function (trees, mapFunc, cb) {
+  var parentTrees = trees.slice(0, self._parents.length)
+  map(parentTrees, mapFunc, cb)
+}
+
+MultiTree.prototype._treesWrapper = function (name, includeParents, func) {
+  var self = this
+  this.ready(function (err) {
+    if (err) return cb(err)
+    self._findLinkTrees(name, includeParents, func)
+  })
+}
+
+MultiTree.prototype.put = function (name, value, cb) {
+  var self = this
+  this._treesWrapper(name, false, function (err, trees) {
+    if (trees.length === 0) return self._tree.put(name, value, cb)
+    if (trees.length > 1) return cb(new Error('Trying to write to multiple symlinks.'))
+    return trees[0].put(name, value, cb) 
+  })
+}
+
+MultiTree.prototype.del = function (name, cb) {
+  var self = this
+  this._treesWrapper(name, false, function (err, trees) {
+    if (trees.length === 0) return self._tree.del(name, cb)
+    if (trees.length > 1) return cb(new Error('Trying to delete from multiple symlinks.'))
+    return trees[0].del(name, cb) 
+  })
+}
+
+MultiTree.prototype.unlink = MultiTree.prototype.del
+
+MultiTree.prototype.list = function (name, opts, cb) {
+  if (typeof opts === 'function') return this.list(name, {}, opts)
+  var self = this
+  this._treesWrapper(name, true, function (err, trees) {
+    if (err) return cb(err)
+    if (trees.length <= self._parents.length) {
+      return map(trees.push(self._tree), function (tree, next) {
+        return tree.list(next)
+      }, function (err, lists) {
+        if (err) return cb(err)
+        // Take the union of the parents and self trees.
+        // Note: merge conflicts can be handled by the user after `get`, not here.
+        return cb(null, listUnion(lists))
+      })
+    }
+    return trees[trees.length - 1].list(name, opts, cb)
+  })
+}
+
+MultiTree.prototype.get = function (name, opts, cb) {
+  if (typeof opts === 'function') return this.list(name, {}, opts)
+  var self = this
+  this._treesWrapper(name, true, function (err, trees) {
+    if (err) return cb(err)
+    if (trees.length > self._parents.length) {
+      if (trees.length - self._parents.length > 1)
+        return cb(new Error('Trying to get from multiple symlinks.'))
+      return trees[trees.length - 1].get(name, opts, cb)
+    }
+    self._tree.get(name, opts, function (err, selfValue) {
+      if (err && !err.notFound) return cb(err)
+      if (selfValue) return cb(null, selfValue)
+      map(trees, function (tree, next) {
+        return tree.get(name, opts, function (err, parentResult) {
+          if (err && !err.notFound) return cb(err)
+          return cb(null, parentResult)
+        }
+      }, function (err, parentResults) {
+        if (err) return cb(err)
+        var nonNullResults = parentResults.filter(function (x) { return x })
+        if (nonNullResults.length === 1) {
+          // No possible conflict -- return single result.
+          return cb(null, nonNullResults[0])
+        }
+        // Ensure that the result list is in parent order so that the user can trace
+        // a result back to its corresponding parent.
+        // Conflict resolution handled by user.
+        return cb(null, nonNullResults)
+      })
+    }) 
   })
 }
 
@@ -236,49 +280,7 @@ MultiTree.prototype.head = function (opts, cb) { }
 
 MultiTree.prototype.history = null
 
-MultiTree.prototype.link = function (name, target, opts, cb) {
-  if (typeof opts === 'function') return self.link(name, target, {}, opts)
-  // Only register an archive if an existing one with the same fields doesn't exist.
-  this._syncIndex(function (err) {
-    if (err) return cb(err)
-    var existing = find(self.archiveIndex, { key: target, version: opts.version })  
-    if (existing) return createlink(existing.id)
-    self._registerArchive(Object.assign({ key: target }, opts), function (err, meta) {
-      if (err) return cb(err)
-      return self.put(name, messages.Link.encode({ id: meta.id }), function (err) {
-        return cb(err)
-      })  
-    })
-  })
-}
-
-MultiTree.prototype.unlink = function (name, cb) {
-  return self.del(name, cb)
-}
-
-MultiTree.prototype.pushLayer = function (cb) {
-  var self = this
-  this._registerArchive({
-    prev: (self.currentLayer) ? self.currentLayer.id : null
-  }, function (err, meta) {
-    if (err) return cb(err)
-    self.currentLayer = layerMeta
-    return cb(null)
-  })
-}
-
-MultiTree.prototype.popLayer = function (cb) {
-  var self = this
-  this._syncIndex(function (err) {
-    if (!self.currentLayer) return cb(new Error('No layer to pop.'))
-    var newTop = self.currentLayer.prev
-    self.currentLayer.prev = null
-    self._tree.put(self._archiveMetadataPath(self.currentLayer.id),
-                   messages.ArchiveMetadataNode.encode(self.currentLayer),
-     function (err) {
-       if (err) return cb(err)
-       self.currentLayer = newTop
-       return cb(null)
-    })
-  })
+function listUnion (lists) {
+  // TODO: probably too many allocations.
+  return Array.from(new Set(lists.reduce(function (l, item) { return l.push(item) }, [])))
 }

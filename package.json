@@ -24,6 +24,7 @@
     "append-tree": "^2.4.0",
     "async-each": "^1.0.1",
     "async-series": "0.0.1",
+    "dat-encoding": "^4.0.2",
     "lodash.find": "^4.6.0",
     "mutexify": "^1.2.0",
     "stream-collector": "^1.0.1"
