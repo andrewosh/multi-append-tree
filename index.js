@@ -3,12 +3,13 @@ var events = require('events')
 var map = require('async-each')
 var find = require('lodash.find')
 var collect = require('stream-collector')
+var lock = require('mutexify')
 var messages = require('./messages')
 var tree = require('append-tree')
 
 module.exports = MultiTree
 
-var ARCHIVE_METADATA_ROOT = '/metadata'
+var PARENTS_ROOT = '/parents'
 var ENTRIES_ROOT = '/entries'
 
 function MultiTree (tree, factory, opts) {
@@ -23,14 +24,17 @@ function MultiTree (tree, factory, opts) {
   this.checkout = opts.checkout
   this._factory = factory
   this._tree = tree
-  this._parents = opts.parents || []
-  this._offset = opts.offset || 0
+  this._lock = lock()
 
   // Set during initial indexing.
   this.version = null
   this.parents = []
-  this.archiveIndex = []
-  this._processed = 0
+
+  // Inflated archives.
+  this.archives = {}
+
+  // Link nodes we've encountered (minimizes link reads).
+  this.links = {}
 
   this.ready(function (err) {
     if (!err) self.emit('ready')
@@ -39,75 +43,16 @@ function MultiTree (tree, factory, opts) {
 
 inherits(MultiTree, events.EventEmitter)
 
-MultiTree.prototype._archiveMetadataPath = function (path) {
-  return p.join(ARCHIVE_METADATA_ROOT, path)
+MultiTree.prototype._parentsPath = function (path) {
+  return p.join(PARENTS_ROOT, path)
 }
 
 MultiTree.prototype._entriesPath = function (path) {
   return p.join(ENTRIES_ROOT, path)
 }
 
-MultiTree.prototype._syncIndex = function (cb) {
-  var self = this
-  this.ready(function (err) {
-    if (err) return cb(err)
-    this._tree.list(ARCHIVE_METADATA_ROOT, function (err, archives) {
-      if (err) return cb(err)
-      // TODO: batch get?
-      map(archives.slice(self._processed), function (archive, next) {
-        self.get(archive, function (err, rawMeta) {
-          if (err) return next(err)
-          var archiveMeta = messages.ArchiveMetadataNode.decode(rawMeta)
-          var existingMeta = self.archiveIndex[archiveMeta.id]
-          if (!existingMeta) {
-            self.archiveIndex[archiveMeta.id] = archiveMeta
-          } else {
-            Object.assign(existingMeta, archiveMeta)
-          }
-          if (archiveMeta.parent) {
-            // Parents should be immediately inflated.
-            self._inflateLink(archiveMeta.id, true, function (err) {
-              if (err) return next(err)
-              return next(null, archiveMeta)
-            })
-          }
-          return next(null, archiveMeta)
-        })
-      }, function (err, archiveMetas) {
-        if (err) return cb(err)
-        // Do a second pass to construct layer/parents lists.
-        archiveMetas.forEach(function (archive) {
-          if (archive.parent) {
-            self.parents.push(archive)
-            return
-          }
-          if (archive.type === messages.ArchiveMetadataNode.Type.LAYER) {
-            if (!self.currentLayer) self.currentLayer = archive
-            else if (!archive.prev) {
-              // If a layer update deletes it's prev pointer, it:
-              // a) must be the current top layer
-              // b) should be removed from the top and replaced by its current prev.
-              if (archive.id !== self.currentLayer.id)
-                throw new Error('Bad layer update: trying to pop interior layer.')
-              var curPrev = self.archiveIndex[archive.prev]
-              self.archiveIndex[archive.id].prev = null
-              self.currentLayer = curPrev
-            } else {
-              // If a layer update declared a new prev, it is the new top layer.
-              var oldTop = self.currentLayer
-              self.currentLayer = archive
-              self.currentLayer.prev = oldTop
-            }
-          }
-        })
-        self._processed += archiveMetas.length
-      })
-    })
-  })
-}
-
-MultiTree.prototype._inflateLink = function (id, isMulti, cb) {
-  var meta = this.linkIndex[id]
+MultiTree.prototype._inflateArchive = function (id, isMulti, cb) {
+  var meta = this.archives[id]
   if (!meta) return cb(new Error('Trying to inflate a nonexistent link.'))
   var opts = meta.version ? : { version: meta.version } : null
   var appendTree = this.factory(meta.key, opts)
@@ -119,63 +64,122 @@ MultiTree.prototype._inflateLink = function (id, isMulti, cb) {
   })
 }
 
-MultiTree.prototype._registerArchive = function (meta, cb) {
-  if (typeof opts === 'function') return self._createNewArchive(meta, {}, opts)
+MultiTree.prototype._getParentTrees = function (cb) {
   var self = this
-  this._syncIndex(function (err) {
-    if (err) return cb(err)
-    var id = self.archiveIndex.length
-    var subtree = (meta.key) ? self.factory(meta.key, meta.version) : self.factory()
-    subtree.ready(function (err) {
+  // TODO: this path request and the subsequent list request should be atomic.
+  // WARNING: possible race condition in _parentsNode if these ops aren't atomic.
+  this._tree.path(PARENTS_ROOT, function (err, path) {
+    if (self._parentsNode && (self._parentsNode === path[0])) {
+      // The list of parents hasn't changed, so the node indices can be reused.
+      return onnodes()
+    }
+    self._tree.list(PARENTS_ROOT, function (err, parentNames) {
       if (err) return cb(err)
-      // TODO: maybe should not edit meta in place?
-      if (!meta.key) meta.key = subtree.feed.key
-      meta.id = id
-      self.archiveIndex[id] = meta
-      self._tree.put(self._archiveMetadataPath(id),
-                     messages.ArchiveMetadataNode.encode(meta),
-        function (err) {
-          if (err) return cb(err)          
-          meta.tree = subtree
-          return cb(null, meta)
+      self._parentsNode = path[0]
+      self._parents = []
+      map(parentNames, function (name, next) {
+        self._readLink(name, function (err, link) {
+          if (err) return next(err)
+          return next(null, link.node)
         })
+      }, function (err, nodes) {
+        if (err) return cb(err)
+        self._parents = nodes
+        return onnodes()
+      })
+    })
+  })
+  function onnodes () {
+    return map(self._parents, function (parent, next) {
+      self._getTreeForNode(parent, next)
+    }, cb)
+  }
+}
+
+MultiTree.prototype._getTreeForNode = function (node, cb) {
+  var link = self.links[nodeIndex]
+  if (link) return onlink(link)
+  self._readLink(name, function (err, link) {
+    if (err) return cb(err)
+    return onlink(link)
+  })
+  function onlink (link) {
+    if (link.tree) return cb(null, link.tree)  
+    self._inflateArchive(link.key, link.version, function (err, tree) {
+      if (err) return cb(err)
+      link.tree = tree
+      return cb(null, link.tree)
+    })
+  }
+}
+
+MultiTree.prototype._findLinkTrees = function (name, readParents, cb) {
+  this.ready(function (err) {
+    if (err) return cb(err)
+    this._tree.path(name, function (err, path) {
+      if (err) return cb(err)
+      var nodeIndex = path[path.length - 1]
+      self._getTreeForNode(nodeIndex, function (err, tree) {
+        if (err) return cb(err)
+        if (!readParents) return cb(null, [tree])
+        self._getParentTrees(function (err, trees) {
+          if (err) return cb(err)
+          return cb(null, trees.push(tree))
+        })
+      })
+  })
+}
+
+MultiTree.prototype._findReadTrees = function (name, cb) {
+  
+}
+
+MultiTree.prototype._writeLink = function (name, meta, cb) {
+  var self = this
+  this.ready(function (err) {
+    if (err) return cb(err)
+    self._lock(function (err) {
+      if (err) return cb(err)
+      meta.node = self._tree.version + 1
+      self._tree.put(name, messages.LinkNode.encode(meta), cb)
     })
   })
 }
 
-MultiTree.prototype._writeUpdate = function (name, versioned, cb) {
+MultiTree.prototype._readLink = function (name, cb) {
   var self = this
-  this._ensureLayer(function (err) {
+  this.ready(function (err) {
     if (err) return cb(err)
-    // TODO: handle "versioned" writes, and come up with a better term.
-    var update = messages.UpdateNode.encode({
-      id: self.currentLayer.id
+    self._tree.get(name, function (err, value) {
+      if (err) return cb(err)
+      var link = messages.LinkNode.decode(value)
+      self.links[link.node] = link
+      return cb(null, link)
     })
-    self.tree.put(name, update, function (err) {
-      return cb(err)
-    })
-  }
+  })
 }
 
 MultiTree.prototype.ready = function (cb) {
   var self = this
   this._tree.ready(function (err) {
     if (err) return cb(err)
-    self._syncIndex(function (err) {
-      return cb(err)
-    })
+    // Index/inflate the parent archives
+    if (self.opts.parents) {
+      if (self._tree.version > 0)) {
+        return cb(new Error('Cannot add parents to an existing tree."))
+      }
+      c
+    }
+
   })
 }
 
-MultiTree.prototype.put = function (name, value, versioned, cb) {
-  if (typeof versioned === 'function') return this.put(name, value, false, versioned)
-  this._writeUpdate(name, versioned, function  (err) {
-    if (err) return cb(err)
-    self.currentLayer.tree.put(name, value, cb)
-  })
+MultiTree.prototype.put = function (name, value, cb) {
+  var path = this._tree.path(name)
+
 }
 
-MultiTree.prototype.del = function (name, versioned, cb) {
+MultiTree.prototype.del = function (name, cb) {
   if (typeof versioned === 'function') return this.del(name, false, versioned)
   this._writeUpdate(name, versioned, function  (err) {
     if (err) return cb(err)

@@ -1,28 +1,6 @@
-message ArchiveMetadataNode {
-  enum Type {
-    LINK = 1;
-    PARENT = 2;
-  }
-
-  required Type type = 1;
-  required uint32 id = 2;
-  required bytes key = 3;
-
-  optional uint64 version = 5;
-  optional bool live = 7;
-  optional bool versioned = 8;
-}
-
-message UpdateNode {
-  enum Type {
-    DATA = 1;
-    LINK = 2;
-  }
-  message ArchiveVersion  {
-    required uint32 id;
-    required uint64 version;
-  }
-  required Type type = 1;
-  optional string name = 2;
-  repeated ArchiveVersion versions = 3;
+message LinkNode {
+  required bytes key = 1;
+  required uint64 node = 2;
+  optional uint64 version = 3;
+  optional bool versioned = 4;
 }
