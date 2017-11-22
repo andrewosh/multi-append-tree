@@ -1,5 +1,5 @@
 var test = require('tape')
-var each = require('async-each')
+var async = require('async')
 var multitree = require('..')
 
 var datEncoding = require('dat-encoding')
@@ -33,22 +33,27 @@ function simpleFactory (key, version, opts) {
 }
 
 function applyOps (tree, list, cb) {
-  each(list, function (l, next) {
-    switch (l.op) {
-      case 'put':
-        tree.put(l.name, l.value, next)
-        break
-      case 'del':
-        tree.del(l.name, l.value, next)
-        break
-      case 'link':
-        tree.link(l.name, l.target, next)
-        break
-      default:
-        throw new Error('bad operation')
-    }
-  }, function (err) {
-    return cb(err)
+  async.series(
+    list.map(function (l) {
+      return function (next) {
+        switch (l.op) {
+          case 'put':
+            tree.put(l.name, l.value, next)
+            break
+          case 'del':
+            tree.del(l.name, l.value, next)
+            break
+          case 'link':
+            tree.link(l.name, l.target, next)
+            break
+          default:
+            throw new Error('bad operation')
+        }
+      }
+    }),
+  function (err) {
+    if (err) return cb(err)
+    return cb()
   })
 }
 
@@ -151,6 +156,53 @@ test('two archives symlinked', function (t) {
         getEqual(t, mt2, '/a', Buffer.from('new hello'))
         getEqual(t, mt2, '/mt1/b', Buffer.from('goodbye'))
         getEqual(t, mt2, '/mt1/a', Buffer.from('hello'))
+      })
+    })
+  })
+})
+test('two archives symlinked, symlink overwritten', function (t) {
+  t.plan(11)
+  createTwo(function (err, mt1, mt2) {
+    t.error(err)
+    applyOps(mt1, [
+      { op: 'put', name: '/a', value: 'hello' },
+      { op: 'put', name: '/b', value: 'goodbye' }
+    ], function (err) {
+      t.error(err)
+      applyOps(mt2, [
+        { op: 'link', name: 'mt1', target: { key: mt1.feed.key } },
+        { op: 'put', name: '/a', value: 'new hello' },
+        { op: 'put', name: 'mt1', value: 'overwrite' }
+      ], function (err) {
+        t.error(err)
+        getEqual(t, mt2, '/a', Buffer.from('new hello'))
+        getEqual(t, mt2, '/mt1/b', undefined)
+        getEqual(t, mt2, '/mt1/a', undefined)
+        getEqual(t, mt2, 'mt1', Buffer.from('overwrite'))
+      })
+    })
+  })
+})
+
+test('two archives symlinked, writing through outer archive', function (t) {
+  t.plan(11)
+  createTwo(function (err, mt1, mt2) {
+    t.error(err)
+    applyOps(mt1, [
+      { op: 'put', name: '/a', value: 'hello' },
+      { op: 'put', name: '/b', value: 'goodbye' }
+    ], function (err) {
+      t.error(err)
+      applyOps(mt2, [
+        { op: 'link', name: 'mt1', target: { key: mt1.feed.key } },
+        { op: 'put', name: '/a', value: 'new hello' },
+        { op: 'put', name: '/mt1/c', value: 'cat entry' }
+      ], function (err) {
+        t.error(err)
+        getEqual(t, mt2, '/a', Buffer.from('new hello'))
+        getEqual(t, mt2, '/mt1/b', Buffer.from('goodbye'))
+        getEqual(t, mt2, '/mt1/a', Buffer.from('hello'))
+        getEqual(t, mt2, '/mt1/c', Buffer.from('cat entry'))
       })
     })
   })

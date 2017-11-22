@@ -124,19 +124,25 @@ MultiTree.prototype._findLinkTrees = function (name, readParents, cb) {
   var self = this
   this.ready(function (err) {
     if (err) return cb(err)
-    console.log('LOOKING UP:', name)
+    console.log('LOOKING UP:', name, 'tree version:', self._tree.version)
     self._tree.path(name, function (err, path) {
-      console.log('path:', path, 'key:', self._tree.feed.key)
+      console.log('path:', path, 'key:', self._tree.feed.key, 'err:', err)
       if (err && err.notFound) return cb(null, [])
       if (err) return cb(err)
+
       var nodeIndex = path[path.length - 1]
+
       self._getTreeForNode(nodeIndex, function (err, tree) {
         if (err) return cb(err)
-        if (!readParents) return cb(null, [tree])
-        self._getParentTrees(function (err, trees) {
+        console.log('TREE AT NODE:', nodeIndex, 'is not null?', tree && tree.version)
+        var linkTreeList = (tree) ? [tree] : []
+        console.log('linkTreeList.length:', linkTreeList.length)
+        if (!readParents) return cb(null, linkTreeList)
+
+        self._getParentTrees(function (err, parentTrees) {
           if (err) return cb(err)
-          if (tree) trees.push(tree)
-          return cb(null, trees)
+          var allTrees = parentTrees.concat(linkTreeList)
+          return cb(null, allTrees)
         })
       })
     })
@@ -151,6 +157,7 @@ MultiTree.prototype._writeLink = function (name, target, cb) {
       if (err) return release(cb, err)
       target.node = self._tree.version + 1
       target.name = name
+      console.log('WROTE LINK AT NODE:', target.node, 'with name:', target.name)
       self._tree.put(name, messages.LinkNode.encode(target), function (err) {
         if (err) return release(cb, err)
         self.version = self._tree.version
@@ -233,7 +240,11 @@ MultiTree.prototype._treesWrapper = function (name, includeParents, cb) {
   var self = this
   this.ready(function (err) {
     if (err) return cb(err)
-    self._findLinkTrees(name, includeParents, cb)
+    self._findLinkTrees(name, includeParents, function (err, trees) {
+      if (err) return cb(err)
+      console.log('In WRAPPER, trees.length:', trees.length)
+      return cb(null, trees)
+    })
   })
 }
 
@@ -243,6 +254,7 @@ MultiTree.prototype.put = function (name, value, cb) {
   this._treesWrapper(name, false, function (err, trees) {
     if (err) return cb(err)
     if (trees.length === 0) {
+      console.log('FINAL PART OF PUT:', name, 'key:', self._tree.feed.key)
       return self._tree.put(name, value, function (err) {
         if (err) return cb(err)
         self.version = self._tree.version
@@ -308,7 +320,7 @@ MultiTree.prototype.get = function (name, opts, cb) {
     }
     self._tree.get(name, opts, function (err, selfValue) {
       if (err && !err.notFound) return cb(err)
-      if (selfValue) return cb(null, selfValue)
+      if (trees.length === 0) return cb(null, selfValue)
       map(trees, function (tree, next) {
         return tree.get(name, opts, function (err, parentResult) {
           if (err && !err.notFound) return cb(err)

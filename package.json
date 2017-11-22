@@ -30,6 +30,7 @@
     "protocol-buffers": "^3.2.1"
   },
   "devDependencies": {
+    "async": "^2.6.0",
     "dependency-check": "^2.9.1",
     "hypercore": "^6.11.0",
     "random-access-memory": "^2.4.0",
