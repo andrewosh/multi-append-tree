@@ -98,7 +98,7 @@ MultiTree.prototype._getParentTrees = function (cb) {
   }
 }
 
-MultiTree.prototype._getTreeForNode = function (node, cb) {
+MultiTree.prototype._getTreeForNode = function (node, name, cb) {
   var self = this
   var link = this.links[node]
   if (link) return onlink(link)
@@ -109,6 +109,7 @@ MultiTree.prototype._getTreeForNode = function (node, cb) {
     return onlink(link)
   })
   function onlink (link) {
+    if ((name === link.name) || !name.startsWith(link.name)) return cb(null)
     if (link.tree) return cb(null, link.tree)
     self._inflateTree(link.key, link.version, function (err, tree) {
       if (err) return cb(err)
@@ -132,7 +133,7 @@ MultiTree.prototype._findLinkTrees = function (name, readParents, cb) {
 
       var nodeIndex = path[path.length - 1]
 
-      self._getTreeForNode(nodeIndex, function (err, tree) {
+      self._getTreeForNode(nodeIndex, name, function (err, tree) {
         if (err) return cb(err)
         console.log('TREE AT NODE:', nodeIndex, 'is not null?', tree && tree.version)
         var linkTreeList = (tree) ? [tree] : []
@@ -250,6 +251,7 @@ MultiTree.prototype._treesWrapper = function (name, includeParents, cb) {
 
 MultiTree.prototype.put = function (name, value, cb) {
   var self = this
+  console.log('PUTTING NAME:', name, 'value:', value, 'which is:', normalize(name))
   name = normalize(name)
   this._treesWrapper(name, false, function (err, trees) {
     if (err) return cb(err)

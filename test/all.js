@@ -36,6 +36,7 @@ function applyOps (tree, list, cb) {
   async.series(
     list.map(function (l) {
       return function (next) {
+        console.log('l:', JSON.stringify(l))
         switch (l.op) {
           case 'put':
             tree.put(l.name, l.value, next)
@@ -170,9 +171,9 @@ test('two archives symlinked, symlink overwritten', function (t) {
     ], function (err) {
       t.error(err)
       applyOps(mt2, [
-        { op: 'link', name: 'mt1', target: { key: mt1.feed.key } },
+        { op: 'link', name: '/mt1', target: { key: mt1.feed.key } },
         { op: 'put', name: '/a', value: 'new hello' },
-        { op: 'put', name: 'mt1', value: 'overwrite' }
+        { op: 'put', name: '/mt1', value: 'overwrite' }
       ], function (err) {
         t.error(err)
         getEqual(t, mt2, '/a', Buffer.from('new hello'))
