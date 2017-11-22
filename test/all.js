@@ -184,7 +184,7 @@ test('two archives symlinked, symlink overwritten', function (t) {
   })
 })
 
-test('two archives symlinked, writing through outer archive', function (t) {
+test.skip('two archives symlinked, writing through outer archive', function (t) {
   t.plan(11)
   createTwo(function (err, mt1, mt2) {
     t.error(err)
