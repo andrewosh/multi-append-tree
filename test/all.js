@@ -2,34 +2,23 @@ var test = require('tape')
 var async = require('async')
 var multitree = require('..')
 
-var datEncoding = require('dat-encoding')
 var ram = require('random-access-memory')
 var core = require('hypercore')
 var tree = require('append-tree')
 
 var trees = {}
 
-function makeId (key, version) {
-  var keystring = datEncoding.encode(key)
-  return (version) ? keystring + '-' + version : keystring
-}
-
-function simpleFactory (key, version, opts) {
+function simpleFactory (key, version, opts, cb) {
   opts = opts || {}
-  opts.version = version
-  var id = makeId(key, version)
   // reuse trees w/ same key and version instead of replicating
-  if (trees[id]) {
-    console.log('REUSING')
-    return trees[id]
-  }
-
-  var newTree = tree(core(ram, key, opts), opts)
-  newTree.ready(function (err) {
-    if (err) throw err
-    trees[id] = newTree
+  console.log('TREES[KEY]:', trees[key], 'key:', key)
+  var t = (trees[key]) ? trees[key] : tree(core(ram, key, opts))
+  if (version) t = t.checkout(version, opts)
+  t.ready(function (err) {
+    if (err) return cb(err)
+    if (!trees[key]) trees[key] = t
+    return cb(null, t)
   })
-  return newTree
 }
 
 function applyOps (tree, list, cb) {
@@ -51,33 +40,32 @@ function applyOps (tree, list, cb) {
             throw new Error('bad operation')
         }
       }
-    }),
-  function (err) {
-    if (err) return cb(err)
-    return cb()
-  })
+    }), cb)
 }
 
 function create (opts, cb) {
   if (typeof opts === 'function') return create({}, opts)
-  var t = multitree(tree(core(ram), opts), simpleFactory, opts)
+  var it = tree(core(ram), opts)
+  var t = multitree(it, simpleFactory, opts)
   t.ready(function (err) {
     if (err) return cb(err)
-    trees[makeId(t.feed.key, t.feed.version)] = t._tree
+    if (!trees[it.feed.key]) trees[it.feed.key] = it
     return cb(null, t)
   })
 }
 
 function createTwo (opts, cb) {
   if (typeof opts === 'function') return createTwo({}, opts)
-  var t1 = multitree(tree(core(ram), opts), simpleFactory)
-  var t2 = multitree(tree(core(ram), opts), simpleFactory)
+  var it1 = tree(core(ram), opts)
+  var it2 = tree(core(ram), opts)
+  var t1 = multitree(it1, simpleFactory)
+  var t2 = multitree(it2, simpleFactory)
   t1.ready(function (err) {
     if (err) return cb(err)
     t2.ready(function (err) {
       if (err) return cb(err)
-      trees[makeId(t1.feed.key, t1.feed.version)] = t1._tree
-      trees[makeId(t2.feed.key, t2.feed.version)] = t2._tree
+      if (!trees[it1.feed.key]) trees[it1.feed.key] = it1
+      if (!trees[it2.feed.key]) trees[it2.feed.key] = it2
       return cb(null, t1, t2)
     })
   })
@@ -90,8 +78,7 @@ function getEqual (t, tree, name, value) {
   })
 }
 
-/*
-function createWithParent (parentOps, cb) {
+function createWithParent (parentOps, childOps, cb) {
   var t1 = multitree(tree(core(ram)), simpleFactory)
   t1.ready(function (err) {
     if (err) return cb(err)
@@ -104,12 +91,14 @@ function createWithParent (parentOps, cb) {
       })
       t2.ready(function (err) {
         if (err) return cb(err)
-        return cb(null, t1, t2)
+        applyOps(t2, childOps, function (err) {
+          if (err) return cb(err)
+          return cb(null, t1, t2)
+        })
       })
     })
   })
 }
-*/
 
 test('single archive get/put', function (t) {
   t.plan(4)
@@ -205,6 +194,23 @@ test('two archives symlinked, writing through outer archive', function (t) {
         getEqual(t, mt2, '/mt1/a', Buffer.from('hello'))
         getEqual(t, mt2, '/mt1/c', Buffer.from('cat entry'))
       })
+    })
+  })
+})
+
+test.skip('two archives with parent-child relationship, list root', function (t) {
+  createWithParent([
+    { op: 'put', name: '/a', value: 'hello' },
+    { op: 'put', name: '/b', value: 'goodbye' }
+  ], [
+    { op: 'put', name: '/c', value: 'cat' }
+  ], function (err, mt1, mt2) {
+    t.error(err)
+    console.log('BEFORE LIST')
+    mt2.list('/', function (err, contents) {
+      t.error(err)
+      t.deepEqual(contents, ['a', 'b', 'c'])
+      t.end()
     })
   })
 })

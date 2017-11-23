@@ -1,6 +1,7 @@
 var p = require('path')
 var events = require('events')
 var map = require('async-each')
+var thunky = require('thunky')
 var lock = require('mutexify')
 var inherits = require('inherits')
 var datEncoding = require('dat-encoding')
@@ -37,6 +38,7 @@ function MultiTree (tree, factory, opts) {
   this.links = {}
 
   var self = this
+  this.ready = thunky(this._open.bind(this))
   this.ready(function (err) {
     if (!err) self.emit('ready')
   })
@@ -54,62 +56,78 @@ MultiTree.prototype._entriesPath = function (path) {
 
 MultiTree.prototype._inflateTree = function (key, version, opts, cb) {
   if (typeof opts === 'function') return this._inflateTree(key, version, {}, opts)
+  var self = this
   var mergedOpts = Object.assign({}, this.opts, opts)
-  var linkTree = MultiTree(this._factory(key, version, mergedOpts), this._factory)
-  linkTree.ready(function (err) {
+  console.log('mergedOpts:', mergedOpts)
+  this._factory(key, version, mergedOpts, function (err, tree) {
+    console.log('AFTER FACTORY, err:', err, 'tree.version:', tree.version)
     if (err) return cb(err)
-    return cb(null, linkTree)
+    var linkTree = MultiTree(tree, self._factory)
+    console.log('entering ready')
+    linkTree.ready(function (err) {
+      if (err) return cb(err)
+      return cb(null, linkTree)
+    })
   })
 }
 
 MultiTree.prototype._getParentTrees = function (cb) {
   var self = this
+  console.log('in get parent rees')
   // TODO: this path request and the subsequent list request should be atomic.
   // WARNING: possible race condition in _parentsNode if these ops aren't atomic.
-  if (!this._tree.path) console.log('this.tree:', this._tree)
   this._tree.path(PARENTS_ROOT, function (err, path) {
     if (err && err.notFound) return cb(null, [])
     if (err) return cb(err)
     if (self._parentsNode && (self._parentsNode === path[0])) {
       // The list of parents hasn't changed, so the node indices can be reused.
-      return onnodes()
+      return onlinks()
     }
+    console.log('LISTING PARENTS ROOT')
     self._tree.list(PARENTS_ROOT, function (err, parentNames) {
+      console.log('parentNames:', parentNames)
       if (err && err.notFound) return cb(null, [])
       if (err) return cb(err)
       self._parentsNode = path[0]
       self._parents = []
+      console.log('self._parentsNode:', self._parentsNode)
       map(parentNames, function (name, next) {
-        self._readLink(name, function (err, link) {
+        console.log('READING PARENT LINK NAME:', p.join(PARENTS_ROOT, name))
+        self._readLink(p.join(PARENTS_ROOT, name), false, function (err, link) {
           if (err) return next(err)
-          return next(null, link.node)
+          console.log('FOUND PARENT LINK:', link.name)
+          return next(null, link)
         })
-      }, function (err, nodes) {
+      }, function (err, links) {
         if (err) return cb(err)
-        self._parents = nodes
-        return onnodes()
+        self._parents = links
+        console.log('self._parents:', self._parents)
+        return onlinks()
       })
     })
   })
-  function onnodes () {
+  function onlinks () {
+    console.log('in onlinks')
     return map(self._parents, function (parent, next) {
-      self._getTreeForNode(parent, next)
+      self._getTreeForNode(parent.node, parent.name, true, next)
     }, cb)
   }
 }
 
-MultiTree.prototype._getTreeForNode = function (node, name, cb) {
+MultiTree.prototype._getTreeForNode = function (node, name, isParent, cb) {
+  if (typeof isParent === 'function') return this._getTreeForNode(node, name, false, isParent)
   var self = this
   var link = this.links[node]
   if (link) return onlink(link)
-  console.log('READING NODE:', node)
+  console.log('READING NODE:', node, 'and name:', name)
   this._readLink(node, true, function (err, link) {
     if (err && err.notFound) return cb(null)
     if (err) return cb(err)
     return onlink(link)
   })
   function onlink (link) {
-    if ((name === link.name) || !name.startsWith(link.name)) return cb(null)
+    console.log('GOT A LINK FOR NODE:', node, 'AND NAME:', name)
+    if (!isParent && ((name === link.name) || !name.startsWith(link.name))) return cb(null)
     if (link.tree) return cb(null, link.tree)
     self._inflateTree(link.key, link.version, function (err, tree) {
       if (err) return cb(err)
@@ -125,9 +143,9 @@ MultiTree.prototype._findLinkTrees = function (name, readParents, cb) {
   var self = this
   this.ready(function (err) {
     if (err) return cb(err)
-    console.log('LOOKING UP:', name, 'tree version:', self._tree.version)
+    console.log('LOOKING UP:', name, 'tree version:', self._tree.version, 'key:', self._tree.feed.key)
     self._tree.path(name, function (err, path) {
-      console.log('path:', path, 'key:', self._tree.feed.key, 'err:', err)
+      console.log('path:', path, 'key:', self._tree.feed.key)
       if (err && err.notFound) return cb(null, [])
       if (err) return cb(err)
 
@@ -200,31 +218,33 @@ MultiTree.prototype._readLink = function (name, isNode, cb) {
   }
 }
 
-MultiTree.prototype.ready = function (cb) {
+MultiTree.prototype._open = function (cb) {
   var self = this
   this._tree.ready(function (err) {
+    console.log('after error now, err:', err)
     if (err) return cb(err)
     if (self.opts.parents) {
-      return map(self.opts.parents, function (parent, next) {
-        self._writeLink(datEncoding.decode(parent.key), parent, function (err) {
+      return map(self.opts.parents,
+        function (parent, next) {
+          self._writeLink(self._parentsPath(datEncoding.encode(parent.key)), parent, next)
+        }, function (err) {
           if (err) return cb(err)
+          console.log('SETTING FEED')
+          init()
         })
-      }, function (err) {
-        if (err) return cb(err)
-        console.log('SETTING FEED')
-        init()
-      })
     }
+    console.log('CALLING INIT')
     init()
   })
   function init () {
     self.version = self._tree.version
     self.feed = self._tree.feed
     // Index/inflate the parents eagerly (because this is required for every read).
-    self._getParentTrees(function (err) {
-      if (err) return cb(err)
-      return cb(null)
-    })
+    if (self._parents.length === 0) {
+      return self._getParentTrees(cb)
+    }
+    console.log('leaving init')
+    return cb()
   }
 }
 
@@ -241,10 +261,12 @@ MultiTree.prototype._treesWrapper = function (name, includeParents, cb) {
   var self = this
   this.ready(function (err) {
     if (err) return cb(err)
-    self._findLinkTrees(name, includeParents, function (err, trees) {
-      if (err) return cb(err)
-      console.log('In WRAPPER, trees.length:', trees.length)
-      return cb(null, trees)
+    self._lock(function (release) {
+      self._findLinkTrees(name, includeParents, function (err, trees) {
+        if (err) return release(cb, err)
+        console.log('In WRAPPER, trees.length:', trees.length)
+        return release(cb, null, trees)
+      })
     })
   })
 }

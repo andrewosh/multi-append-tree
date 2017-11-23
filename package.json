@@ -27,7 +27,8 @@
     "dat-encoding": "^4.0.2",
     "inherits": "^2.0.3",
     "mutexify": "^1.2.0",
-    "protocol-buffers": "^3.2.1"
+    "protocol-buffers": "^3.2.1",
+    "thunky": "^1.0.2"
   },
   "devDependencies": {
     "async": "^2.6.0",
