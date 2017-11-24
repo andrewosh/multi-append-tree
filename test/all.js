@@ -11,7 +11,6 @@ var trees = {}
 function simpleFactory (key, version, opts, cb) {
   opts = opts || {}
   var topTree = (trees[key]) ? trees[key] : tree(core(ram, key, opts))
-  console.log('VERSION IS:', version)
   var t = ((version !== null) && (version >= 0)) ? topTree.checkout(version, opts) : topTree
   t.ready(function (err) {
     if (err) return cb(err)
@@ -24,7 +23,6 @@ function applyOps (tree, list, cb) {
   async.series(
     list.map(function (l) {
       return function (next) {
-        console.log('l:', JSON.stringify(l))
         switch (l.op) {
           case 'put':
             tree.put(l.name, l.value, next)
@@ -74,6 +72,12 @@ function getEqual (t, tree, name, value) {
   tree.get(name, function (err, result) {
     t.error(err)
     t.same(result, value)
+  })
+}
+
+function getError (t, tree, name) {
+  tree.get(name, function (err, result) {
+    t.notEqual(err, undefined)
   })
 }
 
@@ -153,8 +157,9 @@ test('two archives symlinked', function (t) {
     })
   })
 })
+
 test('two archives symlinked, symlink overwritten', function (t) {
-  t.plan(11)
+  t.plan(9)
   createTwo(function (err, mt1, mt2) {
     t.error(err)
     applyOps(mt1, [
@@ -169,8 +174,8 @@ test('two archives symlinked, symlink overwritten', function (t) {
       ], function (err) {
         t.error(err)
         getEqual(t, mt2, '/a', Buffer.from('new hello'))
-        getEqual(t, mt2, '/mt1/b', undefined)
-        getEqual(t, mt2, '/mt1/a', undefined)
+        getError(t, mt2, '/mt1/b')
+        getError(t, mt2, '/mt1/a')
         getEqual(t, mt2, 'mt1', Buffer.from('overwrite'))
       })
     })
