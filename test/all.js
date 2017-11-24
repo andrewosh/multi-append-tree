@@ -221,6 +221,7 @@ test('two archives with parent-child relationship, list root', function (t) {
     mt2.list('/', function (err, contents) {
       t.error(err)
       t.deepEqual(contents, ['a', 'b', 'c'])
+      t.end()
     })
   })
 })

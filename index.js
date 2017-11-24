@@ -47,11 +47,13 @@ function MultiTree (tree, factory, opts) {
 inherits(MultiTree, events.EventEmitter)
 
 MultiTree.prototype._parentsPath = function (path) {
-  return p.join(PARENTS_ROOT, path)
+  var relativePath = (path.startsWith(PARENTS_ROOT)) ? path : p.join(PARENTS_ROOT, path)
+  return normalize(relativePath)
 }
 
 MultiTree.prototype._entriesPath = function (path) {
-  return normalize(p.join(ENTRIES_ROOT, path))
+  var relativePath = (path.startsWith(ENTRIES_ROOT)) ? path : p.join(ENTRIES_ROOT, path)
+  return normalize(relativePath)
 }
 
 MultiTree.prototype._inflateTree = function (key, version, opts, cb) {
@@ -310,10 +312,9 @@ MultiTree.prototype.del = function (name, cb) {
 
 MultiTree.prototype.unlink = MultiTree.prototype.del
 
-MultiTree.prototype.list = function (name, opts, cb) {
+MultiTree.prototype._list = function (name, opts, cb) {
   if (typeof opts === 'function') return this.list(name, {}, opts)
   var self = this
-  name = self._entriesPath(name)
   this._treesWrapper(name, true, function (err, trees) {
     if (err) return cb(err)
     if (trees.length <= self._parents.length) {
@@ -331,6 +332,10 @@ MultiTree.prototype.list = function (name, opts, cb) {
     }
     return trees[trees.length - 1].list(relative(name, trees[trees.length - 1]), opts, cb)
   })
+}
+
+MultiTree.prototype.list = function (name, opts, cb) {
+  return this._list(this._entriesPath(name), opts, cb)
 }
 
 MultiTree.prototype.get = function (name, opts, cb) {
@@ -378,8 +383,7 @@ MultiTree.prototype.history = null
 function listUnion (lists) {
   // TODO: probably too many allocations.
   return Array.from(new Set(lists.reduce(function (l, item) {
-    l.concat(item)
-    return l
+    return l.concat(item)
   })))
 }
 
