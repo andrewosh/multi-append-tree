@@ -344,7 +344,6 @@ MultiTree.prototype.get = function (name, opts, cb) {
   name = self._entriesPath(name)
   this._treesWrapper(name, true, function (err, trees) {
     if (err) return cb(err)
-    console.log('trees.length:', trees.length)
     if (trees.length > self._parents.length) {
       if (trees.length - self._parents.length > 1) { return cb(new Error('Trying to get from multiple symlinks.')) }
       console.log('GETTING FROM SYMLINK')
@@ -352,7 +351,7 @@ MultiTree.prototype.get = function (name, opts, cb) {
     }
     self._tree.get(name, opts, function (err, selfValue) {
       if (err && !err.notFound) return cb(err)
-      if (trees.length === 0) return cb(null, selfValue)
+      if (selfValue || (trees.length === 0)) return cb(null, selfValue)
       map(trees, function (tree, next) {
         return tree.get(name, opts, function (err, parentResult) {
           if (err && !err.notFound) return cb(err)

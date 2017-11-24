@@ -215,13 +215,30 @@ test('two archives with parent-child relationship, list root', function (t) {
     { op: 'put', name: '/b', value: 'goodbye' }
   ], [
     { op: 'put', name: '/c', value: 'cat' }
-  ], function (err, mt1, mt2) {
+  ], function (err, parent, child) {
     t.error(err)
     console.log('BEFORE LIST')
-    mt2.list('/', function (err, contents) {
+    child.list('/', function (err, contents) {
       t.error(err)
       t.deepEqual(contents, ['a', 'b', 'c'])
       t.end()
+    })
+  })
+})
+
+test('two archives with parent-child relationship, overwrite in child', function (t) {
+  t.plan(4)
+  createWithParent([
+    { op: 'put', name: '/a', value: 'hello' },
+    { op: 'put', name: '/b', value: 'goodbye' }
+  ], [
+    { op: 'put', name: '/a', value: 'cat' }
+  ], function (err, parent, child) {
+    t.error(err)
+    console.log('BEFORE LIST')
+    child.get('/a', function (err, contents) {
+      t.error(err)
+      getEqual(t, child, '/a/', Buffer.from('cat'))
     })
   })
 })
