@@ -223,7 +223,7 @@ test('two archives with a versioned, read-only symlink', function (t) {
   })
 })
 
-test.skip('two archives with parent-child relationship, list root', function (t) {
+test('two archives with parent-child relationship, list root', function (t) {
   createWithParent([
     { op: 'put', name: '/a', value: 'hello' },
     { op: 'put', name: '/b', value: 'goodbye' }
@@ -239,7 +239,7 @@ test.skip('two archives with parent-child relationship, list root', function (t)
   })
 })
 
-test.skip('two archives with parent-child relationship, overwrite in child', function (t) {
+test('two archives with parent-child relationship, overwrite in child', function (t) {
   t.plan(4)
   createWithParent([
     { op: 'put', name: '/a', value: 'hello' },
@@ -255,7 +255,7 @@ test.skip('two archives with parent-child relationship, overwrite in child', fun
   })
 })
 
-test.skip('two archives with parent-child relationship, overwrite in child', function (t) {
+test('two archives with parent-child relationship, overwrite in child', function (t) {
   t.plan(4)
   createWithParent([
     { op: 'put', name: '/a', value: 'hello' },
@@ -271,7 +271,37 @@ test.skip('two archives with parent-child relationship, overwrite in child', fun
   })
 })
 
-test.skip('three archives, two with parent-child relationship and one symlink', function (t) {
+test('multi-level parenting', function (t) {
+  t.plan(10)
+  createWithParent([
+    { op: 'put', name: '/a', value: 'hello' },
+    { op: 'put', name: '/b', value: 'goodbye' }
+  ], [
+    { op: 'put', name: '/a', value: 'cat' }
+  ], function (err, parent, child) {
+    t.error(err)
+    create({
+      parents: [
+        { key: child.feed.key, version: child.feed.version }
+      ]
+    }, function (err, grandchild) {
+      t.error(err)
+      applyOps(grandchild, [
+        { op: 'put', name: '/c', value: 'some dog' }
+      ], function (err) {
+        t.error(err)
+        grandchild.get('/a', function (err, contents) {
+          t.error(err)
+          getEqual(t, grandchild, '/b', Buffer.from('goodbye'))
+          getEqual(t, grandchild, '/c', Buffer.from('some dog'))
+          getEqual(t, grandchild, '/a', Buffer.from('cat'))
+        })
+      })
+    })
+  })
+})
+
+test('three archives, two with parent-child relationship and one symlink', function (t) {
   t.plan(9)
   create(function (err, mt) {
     t.error(err)
