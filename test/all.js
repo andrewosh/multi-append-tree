@@ -101,8 +101,6 @@ function createWithParent (parentOps, childOps, cb) {
         if (err) return cb(err)
         applyOps(child, childOps, function (err) {
           if (err) return cb(err)
-          console.log('IT1 FEED KEY:', it1.feed.key)
-          console.log('IT1 FEED LENGTH:', it1.feed.length)
           if (!trees[it2.feed.key]) trees[it2.feed.key] = it2
           return cb(null, parent, child)
         })
@@ -217,7 +215,6 @@ test('two archives with parent-child relationship, list root', function (t) {
     { op: 'put', name: '/c', value: 'cat' }
   ], function (err, parent, child) {
     t.error(err)
-    console.log('BEFORE LIST')
     child.list('/', function (err, contents) {
       t.error(err)
       t.deepEqual(contents, ['a', 'b', 'c'])
@@ -235,10 +232,52 @@ test('two archives with parent-child relationship, overwrite in child', function
     { op: 'put', name: '/a', value: 'cat' }
   ], function (err, parent, child) {
     t.error(err)
-    console.log('BEFORE LIST')
     child.get('/a', function (err, contents) {
       t.error(err)
       getEqual(t, child, '/a/', Buffer.from('cat'))
     })
   })
 })
+
+test('two archives with parent-child relationship, overwrite in child', function (t) {
+  t.plan(4)
+  createWithParent([
+    { op: 'put', name: '/a', value: 'hello' },
+    { op: 'put', name: '/b', value: 'goodbye' }
+  ], [
+    { op: 'put', name: '/a', value: 'cat' }
+  ], function (err, parent, child) {
+    t.error(err)
+    child.get('/a', function (err, contents) {
+      t.error(err)
+      getEqual(t, child, '/a/', Buffer.from('cat'))
+    })
+  })
+})
+
+test('three archives, two with parent-child relationship and one symlink', function (t) {
+  t.plan(9)
+  create(function (err, mt) {
+    t.error(err)
+    applyOps(mt, [
+      { op: 'put', name: '/a', value: 'linked value' }
+    ], function (err) {
+      t.error(err)
+      createWithParent([
+        { op: 'put', name: '/a', value: 'hello' },
+        { op: 'put', name: '/b', value: 'goodbye' }
+      ], [
+        { op: 'put', name: '/a', value: 'cat' },
+        { op: 'link', name: '/linked', target: { key: mt.feed.key } }
+      ], function (err, parent, child) {
+        t.error(err)
+        getEqual(t, child, '/linked/a', Buffer.from('linked value'))
+        getEqual(t, child, '/b', Buffer.from('goodbye'))
+        getEqual(t, child, '/a', Buffer.from('cat'))
+      })
+    })
+  })
+})
+
+test('three archives with parent-child relationship, merge conflict')
+test('three archives with parent-child relationship, switch parent')
