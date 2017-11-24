@@ -11,12 +11,17 @@ var trees = {}
 function simpleFactory (key, version, opts, cb) {
   opts = opts || {}
   // reuse trees w/ same key and version instead of replicating
-  console.log('TREES[KEY]:', trees[key], 'key:', key)
-  var t = (trees[key]) ? trees[key] : tree(core(ram, key, opts))
-  if (version) t = t.checkout(version, opts)
+  // console.log('TREES[KEY]:', trees[key], 'key:', key)
+  if (trees[key]) console.log('REUSING TREE FOR KEY:', key)
+  var topTree = (trees[key]) ? trees[key] : tree(core(ram, key, opts))
+  console.log('VERSION IS:', version)
+  if (trees[key]) {
+    console.log('REUSING VERSION:', trees[key].version)
+  }
+  var t = (version) ? topTree.checkout(version, opts) : topTree
   t.ready(function (err) {
     if (err) return cb(err)
-    if (!trees[key]) trees[key] = t
+    if (!trees[key]) trees[key] = topTree
     return cb(null, t)
   })
 }
@@ -79,21 +84,27 @@ function getEqual (t, tree, name, value) {
 }
 
 function createWithParent (parentOps, childOps, cb) {
-  var t1 = multitree(tree(core(ram)), simpleFactory)
-  t1.ready(function (err) {
+  var it1 = tree(core(ram))
+  var parent = multitree(it1, simpleFactory)
+  parent.ready(function (err) {
     if (err) return cb(err)
-    applyOps(t1, parentOps, function (err) {
+    applyOps(parent, parentOps, function (err) {
       if (err) return cb(err)
-      var t2 = multitree(tree(core(ram)), simpleFactory, {
+      if (!trees[it1.feed.key]) trees[it1.feed.key] = it1
+      var it2 = tree(core(ram))
+      var child = multitree(it2, simpleFactory, {
         parents: [
-          { key: t1.feed.key, version: t1.version }
+          { key: parent.feed.key }
         ]
       })
-      t2.ready(function (err) {
+      child.ready(function (err) {
         if (err) return cb(err)
-        applyOps(t2, childOps, function (err) {
+        applyOps(child, childOps, function (err) {
           if (err) return cb(err)
-          return cb(null, t1, t2)
+          console.log('IT1 FEED KEY:', it1.feed.key)
+          console.log('IT1 FEED LENGTH:', it1.feed.length)
+          if (!trees[it2.feed.key]) trees[it2.feed.key] = it2
+          return cb(null, parent, child)
         })
       })
     })
@@ -198,7 +209,7 @@ test('two archives symlinked, writing through outer archive', function (t) {
   })
 })
 
-test.skip('two archives with parent-child relationship, list root', function (t) {
+test('two archives with parent-child relationship, list root', function (t) {
   createWithParent([
     { op: 'put', name: '/a', value: 'hello' },
     { op: 'put', name: '/b', value: 'goodbye' }
@@ -210,7 +221,6 @@ test.skip('two archives with parent-child relationship, list root', function (t)
     mt2.list('/', function (err, contents) {
       t.error(err)
       t.deepEqual(contents, ['a', 'b', 'c'])
-      t.end()
     })
   })
 })

@@ -79,8 +79,10 @@ MultiTree.prototype._getParentTrees = function (cb) {
   this._tree.path(PARENTS_ROOT, function (err, path) {
     if (err && err.notFound) return cb(null, [])
     if (err) return cb(err)
+    console.log('self._parentsNode:', self._parentsNode, 'path', path)
     if (self._parentsNode && (self._parentsNode === path[0])) {
       // The list of parents hasn't changed, so the node indices can be reused.
+      console.log('REUSING PARENT NODE INDICES')
       return onlinks()
     }
     console.log('LISTING PARENTS ROOT')
@@ -108,7 +110,10 @@ MultiTree.prototype._getParentTrees = function (cb) {
   })
   function onlinks () {
     console.log('in onlinks')
+    if (self._parents.length === 0) return cb()
+    console.log('BUILDING PARENT TREES!!')
     return map(self._parents, function (parent, next) {
+      console.log('BUILDING A TREE')
       self._getTreeForNode(parent.node, parent.name, true, next)
     }, cb)
   }
@@ -220,6 +225,7 @@ MultiTree.prototype._readLink = function (name, isNode, cb) {
 
 MultiTree.prototype._open = function (cb) {
   var self = this
+  console.log('IN OPEN')
   this._tree.ready(function (err) {
     console.log('after error now, err:', err)
     if (err) return cb(err)
@@ -239,12 +245,7 @@ MultiTree.prototype._open = function (cb) {
   function init () {
     self.version = self._tree.version
     self.feed = self._tree.feed
-    // Index/inflate the parents eagerly (because this is required for every read).
-    if (self._parents.length === 0) {
-      return self._getParentTrees(cb)
-    }
-    console.log('leaving init')
-    return cb()
+    self._getParentTrees(cb)
   }
 }
 
@@ -317,10 +318,12 @@ MultiTree.prototype.list = function (name, opts, cb) {
     if (err) return cb(err)
     if (trees.length <= self._parents.length) {
       trees.push(self._tree)
+      console.log('TREES LENGTH:', trees.length)
       return map(trees, function (tree, next) {
         return tree.list(name, opts, next)
       }, function (err, lists) {
         if (err) return cb(err)
+        console.log('RESULT LISTS:', lists)
         // Take the union of the parents and self trees.
         // Note: merge conflicts can be handled by the user after `get`, not here.
         return cb(null, listUnion(lists))
