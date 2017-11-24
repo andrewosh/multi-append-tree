@@ -51,7 +51,7 @@ MultiTree.prototype._parentsPath = function (path) {
 }
 
 MultiTree.prototype._entriesPath = function (path) {
-  return p.join(ENTRIES_ROOT, path)
+  return normalize(p.join(ENTRIES_ROOT, path))
 }
 
 MultiTree.prototype._inflateTree = function (key, version, opts, cb) {
@@ -251,7 +251,7 @@ MultiTree.prototype._open = function (cb) {
 
 MultiTree.prototype.link = function (name, target, cb) {
   var self = this
-  name = normalize(name)
+  name = self._entriesPath(name)
   this.ready(function (err) {
     if (err) return cb(err)
     return self._writeLink(name, target, cb)
@@ -274,8 +274,8 @@ MultiTree.prototype._treesWrapper = function (name, includeParents, cb) {
 
 MultiTree.prototype.put = function (name, value, cb) {
   var self = this
+  name = self._entriesPath(name)
   console.log('PUTTING NAME:', name, 'value:', value, 'which is:', normalize(name))
-  name = normalize(name)
   this._treesWrapper(name, false, function (err, trees) {
     if (err) return cb(err)
     if (trees.length === 0) {
@@ -293,7 +293,7 @@ MultiTree.prototype.put = function (name, value, cb) {
 
 MultiTree.prototype.del = function (name, cb) {
   var self = this
-  name = normalize(name)
+  name = self._entriesPath(name)
   this._treesWrapper(name, false, function (err, trees) {
     if (err) return cb(err)
     if (trees.length === 0) {
@@ -313,7 +313,7 @@ MultiTree.prototype.unlink = MultiTree.prototype.del
 MultiTree.prototype.list = function (name, opts, cb) {
   if (typeof opts === 'function') return this.list(name, {}, opts)
   var self = this
-  name = normalize(name)
+  name = self._entriesPath(name)
   this._treesWrapper(name, true, function (err, trees) {
     if (err) return cb(err)
     if (trees.length <= self._parents.length) {
@@ -336,7 +336,7 @@ MultiTree.prototype.list = function (name, opts, cb) {
 MultiTree.prototype.get = function (name, opts, cb) {
   if (typeof opts === 'function') return this.get(name, {}, opts)
   var self = this
-  name = normalize(name)
+  name = self._entriesPath(name)
   this._treesWrapper(name, true, function (err, trees) {
     if (err) return cb(err)
     console.log('trees.length:', trees.length)
