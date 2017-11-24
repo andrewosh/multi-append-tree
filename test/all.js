@@ -10,15 +10,9 @@ var trees = {}
 
 function simpleFactory (key, version, opts, cb) {
   opts = opts || {}
-  // reuse trees w/ same key and version instead of replicating
-  // console.log('TREES[KEY]:', trees[key], 'key:', key)
-  if (trees[key]) console.log('REUSING TREE FOR KEY:', key)
   var topTree = (trees[key]) ? trees[key] : tree(core(ram, key, opts))
   console.log('VERSION IS:', version)
-  if (trees[key]) {
-    console.log('REUSING VERSION:', trees[key].version)
-  }
-  var t = (version) ? topTree.checkout(version, opts) : topTree
+  var t = ((version !== null) && (version >= 0)) ? topTree.checkout(version, opts) : topTree
   t.ready(function (err) {
     if (err) return cb(err)
     if (!trees[key]) trees[key] = topTree
@@ -207,7 +201,29 @@ test('two archives symlinked, writing through outer archive', function (t) {
   })
 })
 
-test('two archives with parent-child relationship, list root', function (t) {
+test('two archives with a versioned, read-only symlink', function (t) {
+  t.plan(6)
+  createTwo(function (err, mt1, mt2) {
+    t.error(err)
+    applyOps(mt1, [
+      { op: 'put', name: '/a', value: 'hello' },
+      { op: 'put', name: '/a', value: 'goodbye' }
+    ], function (err) {
+      t.error(err)
+      applyOps(mt2, [
+        { op: 'link', name: 'mt1', target: { key: mt1.feed.key, version: 0 } }
+      ], function (err) {
+        t.error(err)
+        getEqual(t, mt2, '/mt1/a', Buffer.from('hello'))
+        mt2.put('/mt1/cat', 'meow', function (err) {
+          t.notEqual(err, undefined)
+        })
+      })
+    })
+  })
+})
+
+test.skip('two archives with parent-child relationship, list root', function (t) {
   createWithParent([
     { op: 'put', name: '/a', value: 'hello' },
     { op: 'put', name: '/b', value: 'goodbye' }
@@ -223,7 +239,7 @@ test('two archives with parent-child relationship, list root', function (t) {
   })
 })
 
-test('two archives with parent-child relationship, overwrite in child', function (t) {
+test.skip('two archives with parent-child relationship, overwrite in child', function (t) {
   t.plan(4)
   createWithParent([
     { op: 'put', name: '/a', value: 'hello' },
@@ -239,7 +255,7 @@ test('two archives with parent-child relationship, overwrite in child', function
   })
 })
 
-test('two archives with parent-child relationship, overwrite in child', function (t) {
+test.skip('two archives with parent-child relationship, overwrite in child', function (t) {
   t.plan(4)
   createWithParent([
     { op: 'put', name: '/a', value: 'hello' },
@@ -255,7 +271,7 @@ test('two archives with parent-child relationship, overwrite in child', function
   })
 })
 
-test('three archives, two with parent-child relationship and one symlink', function (t) {
+test.skip('three archives, two with parent-child relationship and one symlink', function (t) {
   t.plan(9)
   create(function (err, mt) {
     t.error(err)

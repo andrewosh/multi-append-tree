@@ -60,7 +60,7 @@ MultiTree.prototype._inflateTree = function (key, version, opts, cb) {
   if (typeof opts === 'function') return this._inflateTree(key, version, {}, opts)
   var self = this
   var mergedOpts = Object.assign({}, this.opts, opts)
-  console.log('mergedOpts:', mergedOpts)
+  if (version === -1) version = null
   this._factory(key, version, mergedOpts, function (err, tree) {
     console.log('AFTER FACTORY, err:', err, 'tree.version:', tree.version)
     if (err) return cb(err)
