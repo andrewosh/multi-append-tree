@@ -1,5 +1,6 @@
 var test = require('tape')
 var async = require('async')
+var datEncoding = require('dat-encoding')
 var multitree = require('..')
 
 var ram = require('random-access-memory')
@@ -212,7 +213,7 @@ test('two archives with a versioned, read-only symlink', function (t) {
     t.error(err)
     applyOps(mt1, [
       { op: 'put', name: '/a', value: 'hello' },
-      { op: 'put', name: '/a', value: 'goodbye' }
+      { op: 'put', name: '/b', value: 'goodbye' }
     ], function (err) {
       t.error(err)
       applyOps(mt2, [
@@ -223,6 +224,43 @@ test('two archives with a versioned, read-only symlink', function (t) {
         mt2.put('/mt1/cat', 'meow', function (err) {
           t.notEqual(err, undefined)
         })
+      })
+    })
+  })
+})
+
+test('two archives with a dat://-style symlink', function (t) {
+  t.plan(5)
+  createTwo(function (err, mt1, mt2) {
+    t.error(err)
+    applyOps(mt1, [
+      { op: 'put', name: '/a', value: 'hello' }
+    ], function (err) {
+      t.error(err)
+      applyOps(mt2, [
+        { op: 'link', name: 'mt1', target: 'dat://' + datEncoding.encode(mt1.feed.key) }
+      ], function (err) {
+        t.error(err)
+        getEqual(t, mt2, '/mt1/a', Buffer.from('hello'))
+      })
+    })
+  })
+})
+
+test('two archives with a symlink that specifies a path', function (t) {
+  t.plan(5)
+  createTwo(function (err, mt1, mt2) {
+    t.error(err)
+    applyOps(mt1, [
+      { op: 'put', name: '/this/is/nested/a', value: 'hello' }
+    ], function (err) {
+      t.error(err)
+      var treeId = 'dat://' + datEncoding.encode(mt1.feed.key) + '/this/is/nested'
+      applyOps(mt2, [
+        { op: 'link', name: 'mt1', target: treeId }
+      ], function (err) {
+        t.error(err)
+        getEqual(t, mt2, '/mt1/a', Buffer.from('hello'))
       })
     })
   })
@@ -240,22 +278,6 @@ test('two archives with parent-child relationship, list root', function (t) {
       t.error(err)
       t.deepEqual(contents, ['a', 'b', 'c'])
       t.end()
-    })
-  })
-})
-
-test('two archives with parent-child relationship, overwrite in child', function (t) {
-  t.plan(4)
-  createWithParent([
-    { op: 'put', name: '/a', value: 'hello' },
-    { op: 'put', name: '/b', value: 'goodbye' }
-  ], [
-    { op: 'put', name: '/a', value: 'cat' }
-  ], function (err, parent, child) {
-    t.error(err)
-    child.get('/a', function (err, contents) {
-      t.error(err)
-      getEqual(t, child, '/a/', Buffer.from('cat'))
     })
   })
 })

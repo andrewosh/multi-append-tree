@@ -8,6 +8,7 @@ message LinkNode {
   required string name = 1;
   required bytes key = 2;
   required uint64 node = 3;
-  optional int64 version = 4 [default = -1];
-  optional bool versioned = 5;
+  optional string path = 4;
+  optional int64 version = 5 [default = -1];
+  optional bool versioned = 6;
 }

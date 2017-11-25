@@ -129,6 +129,7 @@ MultiTree.prototype._getTreeForNode = function (node, name, isParent, cb) {
 
       // TODO: This should be done better.
       tree.nameTag = link.name
+      tree.pathTag = link.path
 
       return cb(null, link.tree)
     })
@@ -168,6 +169,7 @@ MultiTree.prototype._writeLink = function (name, target, cb) {
       if (err) return release(cb, err)
       target.node = self._tree.version + 1
       target.name = name
+      target.key = datEncoding.decode(target.key)
       self._tree.put(name, messages.LinkNode.encode(target), function (err) {
         if (err) return release(cb, err)
         self.version = self._tree.version
@@ -232,8 +234,35 @@ MultiTree.prototype._open = function (cb) {
   }
 }
 
-MultiTree.prototype.link = function (name, target, cb) {
+MultiTree.prototype._targetFromString = function (target) {
+  if (target.startsWith('dat://')) target = target.slice(6)
+  var list = target.split('/')
+  var key = list[0]
+  key = datEncoding.encode(key)
+  return {
+    key: key,
+    path: normalize(list.slice(1).join('/'))
+  }
+}
+
+MultiTree.prototype._pathForTree = function (name, tree) {
+}
+
+MultiTree.prototype.link = function (name, target, opts, cb) {
+  if (typeof opts === 'function') return this.link(name, target, {}, opts)
   var self = this
+
+  if (typeof target === 'string') {
+    try {
+      target = self._targetFromString(target)
+    } catch (err) {
+      return cb(err)
+    }
+  }
+
+  if (target.version !== 0) target.version = target.version || opts.version
+  target.path = target.path || opts.path || '/'
+
   name = self._entriesPath(name)
   this.ready(function (err) {
     if (err) return cb(err)
@@ -295,12 +324,14 @@ MultiTree.prototype._list = function (name, opts, cb) {
   var self = this
   this._treesWrapper(name, true, function (err, trees) {
     if (err) return cb(err)
+
     if (trees.length <= self._parents.length) {
       trees.push(self._tree)
       return map(trees, function (tree, next) {
         return tree.list(name, opts, next)
       }, function (err, lists) {
         if (err) return cb(err)
+
         // Take the union of the parents and self trees.
         // Note: merge conflicts can be handled by the user after `get`, not here.
         return cb(null, listUnion(lists))
@@ -376,9 +407,11 @@ function listUnion (lists) {
   })))
 }
 
-// Name tagging of subtrees is hacky indeed.
+// Name/path tagging of subtrees is hacky indeed.
 function relative (name, subtree) {
-  return name.slice(subtree.nameTag.length)
+  var relativePath = p.join(name.slice(subtree.nameTag.length))
+  if (subtree.pathTag) relativePath = p.join(subtree.pathTag, relativePath)
+  return relativePath
 }
 
 function normalize (name) {
