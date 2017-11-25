@@ -51,7 +51,7 @@ Since multi-append-trees need to dynamically create sub-append-trees, it needs t
 #### `link(name, target, opts cb)`
 
 Create a Link record that references another append-tree (specified by `target`)
-
+`name` is the symlink's absolute path
 `target` can be either:
 1. An object of the form `{ key: <key>, path: <path> }`
 2. A string of the form `dat://<key>/<path>` or `<key>/<path>` (assuming the latter form corresponds to a propely encoded dat key).
@@ -61,4 +61,8 @@ Create a Link record that references another append-tree (specified by `target`)
   version: <unspecified, as in latest> // The desired tree version, if the tree should be versioned (static).
 }
 ```
-#### `unlink(name, target, cb)`
+
+#### `unlink(name, cb)`
+`name` is the symlink's absolute path
+
+Delete the link record corresponding to `name`. Requests into the subtree under `name` will now return NotFound errors, unless those records are available in a parent.
