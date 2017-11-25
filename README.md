@@ -14,7 +14,8 @@ Oh, and since multiple parents are allowed, `get` or `list` operations might ret
 `npm i multi-append-tree`
 
 ### Usage
-`multi-append-tree` wraps a set of nested `append-trees` and can b
+
+*NOTE: WIP, example not yet functional*
 ```js
 var hypercore = require('hypercore')
 var tree = require('append-tree')
