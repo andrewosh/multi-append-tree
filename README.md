@@ -39,7 +39,8 @@ multi-append-tree implements the append-tree API, with the addition of the metho
 Since multi-append-trees need to dynamically create sub-append-trees, it needs to be provided with a factory function.
 
 `baseTree` is the primary append-tree that stores content and links.
-`factory` is a funtion that takes a key and (optionally) a version, and returns an append-tree:
+
+`factory` is a function that takes a key and an optional version, and returns an append-tree:
 
 `opts` are append-tree options, but with the important addition of:
 ```js
@@ -54,7 +55,7 @@ Create a Link record that references another append-tree (specified by `target`)
 `name` is the symlink's absolute path
 `target` can be either:
 1. An object of the form `{ key: <key>, path: <path> }`
-2. A string of the form `dat://<key>/<path>` or `<key>/<path>` (assuming the latter form corresponds to a propely encoded dat key).
+2. A string of the form `dat://<key>/<path>` or `<key>/<path>` (assuming the latter form is a dat key + a path).
 `opts` is an optional object of the form:
 ```js
 {
