@@ -234,31 +234,9 @@ MultiTree.prototype._open = function (cb) {
   }
 }
 
-MultiTree.prototype._targetFromString = function (target) {
-  if (target.startsWith('dat://')) target = target.slice(6)
-  var list = target.split('/')
-  var key = list[0]
-  key = datEncoding.encode(key)
-  return {
-    key: key,
-    path: normalize(list.slice(1).join('/'))
-  }
-}
-
-MultiTree.prototype._pathForTree = function (name, tree) {
-}
-
 MultiTree.prototype.link = function (name, target, opts, cb) {
   if (typeof opts === 'function') return this.link(name, target, {}, opts)
   var self = this
-
-  if (typeof target === 'string') {
-    try {
-      target = self._targetFromString(target)
-    } catch (err) {
-      return cb(err)
-    }
-  }
 
   if (target.version !== 0) target.version = target.version || opts.version
   target.path = target.path || opts.path || '/'
@@ -363,7 +341,7 @@ MultiTree.prototype.get = function (name, opts, cb) {
     // Otherwise, first check if the content is in our local tree.
     self._tree.get(name, opts, function (selfErr, selfValue) {
       if (selfErr && !selfErr.notFound) return cb(selfErr)
-      if (selfValue) return cb(null, selfValue)
+      if (selfValue) return onvalue(selfValue)
 
       if (trees.length === 0) {
         if (selfErr) return cb(selfErr)
@@ -390,6 +368,10 @@ MultiTree.prototype.get = function (name, opts, cb) {
       })
     })
   })
+
+  function onvalue (value) {
+    return cb(null, value)   
+  }
 }
 
 MultiTree.prototype.checkout = function (seq, opts) {

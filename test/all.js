@@ -255,9 +255,9 @@ test('two archives with a symlink that specifies a path', function (t) {
       { op: 'put', name: '/this/is/nested/a', value: 'hello' }
     ], function (err) {
       t.error(err)
-      var treeId = 'dat://' + datEncoding.encode(mt1.feed.key) + '/this/is/nested'
+      var target = { key: mt1.feed.key, path: '/this/is/nested' }
       applyOps(mt2, [
-        { op: 'link', name: 'mt1', target: treeId }
+        { op: 'link', name: 'mt1', target: target }
       ], function (err) {
         t.error(err)
         getEqual(t, mt2, '/mt1/a', Buffer.from('hello'))
