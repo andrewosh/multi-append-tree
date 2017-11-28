@@ -24,6 +24,7 @@
   "dependencies": {
     "append-tree": "^2.4.0",
     "async-each": "^1.0.1",
+    "codecs": "^1.2.0",
     "dat-encoding": "^4.0.2",
     "inherits": "^2.0.3",
     "mutexify": "^1.2.0",
@@ -37,8 +38,5 @@
     "random-access-memory": "^2.4.0",
     "standard": "^10.0.3",
     "tape": "^4.8.0"
-  },
-  "peerDependencies": {
-    "append-tree": "~2.0"
   }
 }

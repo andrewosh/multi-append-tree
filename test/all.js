@@ -1,23 +1,29 @@
 var test = require('tape')
 var async = require('async')
-var datEncoding = require('dat-encoding')
 var multitree = require('..')
 
 var ram = require('random-access-memory')
 var core = require('hypercore')
-var tree = require('append-tree')
 
-var trees = {}
+var cores = {}
 
-function simpleFactory (key, version, opts, cb) {
+function simpleFactory (key, opts) {
+  if (key && (!(key instanceof Buffer) || (typeof key === 'string'))) return simpleFactory(null, key)
   opts = opts || {}
-  var topTree = (trees[key]) ? trees[key] : tree(core(ram, key, opts))
-  var t = ((version !== null) && (version >= 0)) ? topTree.checkout(version, opts) : topTree
-  t.ready(function (err) {
-    if (err) return cb(err)
-    if (!trees[key]) trees[key] = topTree
-    return cb(null, t)
+  console.log('in simpleFactory, key:', key)
+
+  var c
+  if (!key) {
+    c = core(ram, opts)
+  } else {
+    c = cores[key] ? cores[key] : core(ram, key, opts)
+  }
+
+  c.ready(function (err) {
+    if (err) throw err
+    if (!cores[c.key]) cores[c.key] = c
   })
+  return c
 }
 
 function applyOps (tree, list, cb) {
@@ -43,27 +49,21 @@ function applyOps (tree, list, cb) {
 
 function create (opts, cb) {
   if (typeof opts === 'function') return create({}, opts)
-  var it = tree(core(ram), opts)
-  var t = multitree(it, simpleFactory, opts)
+  var t = multitree(simpleFactory, opts)
   t.ready(function (err) {
     if (err) return cb(err)
-    if (!trees[it.feed.key]) trees[it.feed.key] = it
     return cb(null, t)
   })
 }
 
 function createTwo (opts, cb) {
   if (typeof opts === 'function') return createTwo({}, opts)
-  var it1 = tree(core(ram), opts)
-  var it2 = tree(core(ram), opts)
-  var t1 = multitree(it1, simpleFactory)
-  var t2 = multitree(it2, simpleFactory)
+  var t1 = multitree(simpleFactory)
+  var t2 = multitree(simpleFactory)
   t1.ready(function (err) {
     if (err) return cb(err)
     t2.ready(function (err) {
       if (err) return cb(err)
-      if (!trees[it1.feed.key]) trees[it1.feed.key] = it1
-      if (!trees[it2.feed.key]) trees[it2.feed.key] = it2
       return cb(null, t1, t2)
     })
   })
@@ -83,15 +83,12 @@ function getError (t, tree, name) {
 }
 
 function createWithParent (parentOps, childOps, cb) {
-  var it1 = tree(core(ram))
-  var parent = multitree(it1, simpleFactory)
+  var parent = multitree(simpleFactory)
   parent.ready(function (err) {
     if (err) return cb(err)
     applyOps(parent, parentOps, function (err) {
       if (err) return cb(err)
-      if (!trees[it1.feed.key]) trees[it1.feed.key] = it1
-      var it2 = tree(core(ram))
-      var child = multitree(it2, simpleFactory, {
+      var child = multitree(simpleFactory, {
         parents: [
           { key: parent.feed.key }
         ]
@@ -100,7 +97,6 @@ function createWithParent (parentOps, childOps, cb) {
         if (err) return cb(err)
         applyOps(child, childOps, function (err) {
           if (err) return cb(err)
-          if (!trees[it2.feed.key]) trees[it2.feed.key] = it2
           return cb(null, parent, child)
         })
       })
@@ -224,24 +220,6 @@ test('two archives with a versioned, read-only symlink', function (t) {
         mt2.put('/mt1/cat', 'meow', function (err) {
           t.notEqual(err, undefined)
         })
-      })
-    })
-  })
-})
-
-test('two archives with a dat://-style symlink', function (t) {
-  t.plan(5)
-  createTwo(function (err, mt1, mt2) {
-    t.error(err)
-    applyOps(mt1, [
-      { op: 'put', name: '/a', value: 'hello' }
-    ], function (err) {
-      t.error(err)
-      applyOps(mt2, [
-        { op: 'link', name: 'mt1', target: 'dat://' + datEncoding.encode(mt1.feed.key) }
-      ], function (err) {
-        t.error(err)
-        getEqual(t, mt2, '/mt1/a', Buffer.from('hello'))
       })
     })
   })

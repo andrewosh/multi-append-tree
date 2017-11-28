@@ -1,14 +1,17 @@
 message Node {
-  required string name = 1;
+  enum Type {
+    DATA = 1;
+    LINK = 2;
+  }
+  required Type type = 1;
   optional bytes value = 2;
-  optional bytes paths = 3;
 }
 
 message LinkNode {
   required string name = 1;
   required bytes key = 2;
-  optional bytes value = 3;
-  required uint64 node = 4;
+  required uint64 node = 3;
+  optional bytes value = 4;
   optional string path = 5;
   optional int64 version = 6 [default = -1];
   optional bool versioned = 7;
