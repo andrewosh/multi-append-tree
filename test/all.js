@@ -10,7 +10,6 @@ var cores = {}
 function simpleFactory (key, opts) {
   if (key && (!(key instanceof Buffer) || (typeof key === 'string'))) return simpleFactory(null, key)
   opts = opts || {}
-  console.log('in simpleFactory, key:', key)
 
   var c
   if (!key) {

@@ -362,7 +362,6 @@ MultiTree.prototype.get = function (name, opts, cb) {
   this._treesWrapper(name, true, function (err, trees) {
     if (err) return cb(err)
 
-
     // If the content path is within a symlink, traverse into that link.
     if (trees.length > self._parents.length) {
       if (trees.length - self._parents.length > 1) {
@@ -379,7 +378,6 @@ MultiTree.prototype.get = function (name, opts, cb) {
       if (trees.length === 0) {
         if (selfErr) return cb(selfErr)
       }
-
 
       // If the content isn't local, check the parents.
       map(trees, function (tree, next) {
