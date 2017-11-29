@@ -48,7 +48,7 @@ function applyOps (tree, list, cb) {
 
 function create (opts, cb) {
   if (typeof opts === 'function') return create({}, opts)
-  var t = multitree(simpleFactory, opts)
+  var t = multitree(simpleFactory(), simpleFactory, opts)
   t.ready(function (err) {
     if (err) return cb(err)
     return cb(null, t)
@@ -57,8 +57,8 @@ function create (opts, cb) {
 
 function createTwo (opts, cb) {
   if (typeof opts === 'function') return createTwo({}, opts)
-  var t1 = multitree(simpleFactory)
-  var t2 = multitree(simpleFactory)
+  var t1 = multitree(simpleFactory(), simpleFactory, opts)
+  var t2 = multitree(simpleFactory(), simpleFactory, opts)
   t1.ready(function (err) {
     if (err) return cb(err)
     t2.ready(function (err) {
@@ -82,12 +82,12 @@ function getError (t, tree, name) {
 }
 
 function createWithParent (parentOps, childOps, cb) {
-  var parent = multitree(simpleFactory)
+  var parent = multitree(simpleFactory(), simpleFactory)
   parent.ready(function (err) {
     if (err) return cb(err)
     applyOps(parent, parentOps, function (err) {
       if (err) return cb(err)
-      var child = multitree(simpleFactory, {
+      var child = multitree(simpleFactory(), simpleFactory, {
         parents: [
           { key: parent.feed.key }
         ]
@@ -103,13 +103,17 @@ function createWithParent (parentOps, childOps, cb) {
   })
 }
 
-test('single archive get/put', function (t) {
-  t.plan(4)
+test('single archive get/put/del', function (t) {
+  t.plan(6)
   create({ valueEncoding: 'utf-8' }, function (err, mt) {
     t.error(err)
     mt.put('/hey', 'there', function (err) {
       t.error(err)
       getEqual(t, mt, '/hey', 'there')
+      mt.del('/hey', function (err) {
+        t.error(err)
+        getError(t, mt, '/hey')
+      })
     })
   })
 })

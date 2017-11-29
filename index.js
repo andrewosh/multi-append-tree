@@ -16,10 +16,10 @@ module.exports = MultiTree
 var PARENTS_ROOT = '/parents'
 var ENTRIES_ROOT = '/entries'
 
-function MultiTree (factory, key, opts) {
-  if (!(this instanceof MultiTree)) return new MultiTree(factory, key, opts)
+function MultiTree (feed, factory, key, opts) {
+  if (!(this instanceof MultiTree)) return new MultiTree(feed, factory, key, opts)
   if (!factory || !(typeof factory === 'function')) throw new Error('Factory must be a non-null function that returns hypercores')
-  if (key && (!(key instanceof Buffer) && !(typeof key === 'string'))) return new MultiTree(factory, null, key)
+  if (key && (!(key instanceof Buffer) && !(typeof key === 'string'))) return new MultiTree(feed, factory, null, key)
 
   if (!opts) opts = {}
   this.opts = opts
@@ -33,7 +33,8 @@ function MultiTree (factory, key, opts) {
   events.EventEmitter.call(this)
 
   this._factory = factory
-  this._tree = tree(factory(this.key, this.subtreeOpts), this.subtreeOpts)
+  this.feed = feed || factory(this.key, this.subtreeOpts)
+  this._tree = tree(this.feed, this.subtreeOpts)
   this._lock = lock()
 
   // Set during initial indexing.
@@ -71,7 +72,7 @@ MultiTree.prototype._inflateTree = function (key, version, opts, cb) {
   var mergedOpts = Object.assign({}, this.opts, opts)
   mergedOpts.parents = null
 
-  var t = MultiTree(this._factory, key, mergedOpts)
+  var t = MultiTree(this._factory(key, mergedOpts), this._factory, mergedOpts)
 
   if (version !== null && version > -1) {
     t.checkout(version)
@@ -222,6 +223,7 @@ MultiTree.prototype._extractData = function (node, keepLink) {
 
 MultiTree.prototype._readNode = function (name, isNode, cb) {
   var self = this
+  console.log('reading:', name, 'isNode:', isNode)
   this._tree.ready(function (err) {
     if (err) return cb(err)
     if (!isNode) {
@@ -230,13 +232,21 @@ MultiTree.prototype._readNode = function (name, isNode, cb) {
         return onnode(value)
       })
     }
+    console.log('about to get!')
     self._tree.feed.get(name, function (err, bytes) {
+      console.log('err:', err)
       if (err) return cb(err)
       var outer = atMessages.Node.decode(bytes)
+      console.log('outer:', outer)
       return onnode(outer.value)
     })
   })
   function onnode (rawNode) {
+    if (!rawNode) {
+      var err = new Error(name + ' not found')
+      err.notFound = true
+      return cb(err)
+    }
     var node = messages.Node.decode(rawNode)
     return cb(null, node)
   }
