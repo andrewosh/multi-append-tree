@@ -33,7 +33,6 @@ function MultiTree (factory, key, opts) {
   events.EventEmitter.call(this)
 
   this._factory = factory
-  console.log('THIS.KEY:', this.key)
   this._tree = tree(factory(this.key, this.subtreeOpts), this.subtreeOpts)
   this._lock = lock()
 
@@ -72,17 +71,14 @@ MultiTree.prototype._inflateTree = function (key, version, opts, cb) {
   var mergedOpts = Object.assign({}, this.opts, opts)
   mergedOpts.parents = null
 
-  console.log('INFLATING TREE WITH KEY:', key)
   var t = MultiTree(this._factory, key, mergedOpts)
 
   if (version !== null && version > -1) {
-    console.log('IN HERE VERSION:', version)
     t.checkout(version)
   }
 
   t.ready(function (err) {
     if (err) return cb(err)
-    console.log('t.version:', t.version)
     return cb(null, t)
   })
 }
@@ -107,7 +103,6 @@ MultiTree.prototype._getParentTrees = function (cb) {
       self._parents = []
 
       map(parentNames, function (name, next) {
-        console.log('name in getParentTrees:', name)
         self._readNode(p.join(PARENTS_ROOT, name), false, function (err, link) {
           if (err) return next(err)
           return next(null, self._extractData(link, true))
@@ -123,7 +118,6 @@ MultiTree.prototype._getParentTrees = function (cb) {
   function onlinks () {
     if (self._parents.length === 0) return cb()
     return map(self._parents, function (parent, next) {
-      console.log('about to call _getTreeForNode with parent:', parent)
       self._getTreeForNode(parent.node, parent.name, true, next)
     }, cb)
   }
@@ -134,9 +128,7 @@ MultiTree.prototype._getTreeForNode = function (node, name, isParent, cb) {
   var self = this
   var link = this.links[node]
   if (link) return onlink(link)
-  console.log('getting tree for node:', node)
   this._readNode(node, true, function (err, outerNode) {
-    console.log('in getTreeForNode, node:', node, 'name:', name, 'link:', outerNode)
     if (err && err.notFound) return cb(null)
     if (err) return cb(err)
 
@@ -145,11 +137,9 @@ MultiTree.prototype._getTreeForNode = function (node, name, isParent, cb) {
     return onlink(messages.LinkNode.decode(outerNode.value))
   })
   function onlink (link) {
-    console.log('link:', link)
     if (!isParent && ((name === link.name) || !name.startsWith(link.name))) return cb(null)
     if (link.tree) return cb(null, link.tree)
     self._inflateTree(link.key, link.version, function (err, tree) {
-      console.log('after _inflateTree')
       if (err) return cb(err)
       link.tree = tree
 
@@ -157,7 +147,6 @@ MultiTree.prototype._getTreeForNode = function (node, name, isParent, cb) {
       tree.nameTag = link.name
       tree.pathTag = link.path
 
-      console.log('leaving onlink')
       return cb(null, link.tree)
     })
   }
@@ -198,7 +187,6 @@ MultiTree.prototype._writeData = function (name, value, isLink, cb) {
         type: messages.Node.Type.DATA,
         value: self._codec.encode(value)
       })
-      console.log('data:', data)
     } else {
       Object.assign(value, {
         node: self._tree.version + 1,
@@ -206,13 +194,11 @@ MultiTree.prototype._writeData = function (name, value, isLink, cb) {
         key: datEncoding.decode(value.key),
         value: self._codec.encode(value.value)
       })
-      console.log('value:', value)
       data = messages.Node.encode({
         type: messages.Node.Type.LINK,
         value: messages.LinkNode.encode(value)
       })
     }
-    console.log('PUTTING')
     self._tree.put(name, data, cb)
   })
 }
@@ -226,7 +212,6 @@ MultiTree.prototype._extractData = function (node, keepLink) {
     case (messages.Node.Type.LINK):
       var link = messages.LinkNode.decode(node.value)
       this.links[link.node] = link
-      console.log('here link:', link)
       value = keepLink ? link : link.value
       break
     default:
@@ -237,31 +222,22 @@ MultiTree.prototype._extractData = function (node, keepLink) {
 
 MultiTree.prototype._readNode = function (name, isNode, cb) {
   var self = this
-  console.log('in _readNode, name:', name)
   this._tree.ready(function (err) {
     if (err) return cb(err)
-    console.log('tree is ready')
     if (!isNode) {
-      console.log('not a node')
       return self._tree.get(name, function (err, value) {
         if (err) return cb(err)
-        console.log('tree got')
         return onnode(value)
       })
     }
-    console.log('is a node:', name)
     self._tree.feed.get(name, function (err, bytes) {
       if (err) return cb(err)
-      console.log('about to decode:', bytes)
       var outer = atMessages.Node.decode(bytes)
-      console.log('outer:', outer)
       return onnode(outer.value)
     })
   })
   function onnode (rawNode) {
-    console.log('IN onnode')
     var node = messages.Node.decode(rawNode)
-    console.log('node:', node)
     return cb(null, node)
   }
 }
@@ -330,7 +306,6 @@ MultiTree.prototype.put = function (name, value, cb) {
       })
     }
     if (trees.length > 1) return cb(new Error('Trying to write to multiple symlinks.'))
-    console.log('WRITING TO A SYMLINK')
     return trees[0].put(relative(name, trees[0]), value, cb)
   })
 }
@@ -377,7 +352,6 @@ MultiTree.prototype._list = function (name, opts, cb) {
 }
 
 MultiTree.prototype.list = function (name, opts, cb) {
-  console.log('LIST')
   return this._list(this._entriesPath(name), opts, cb)
 }
 
@@ -388,20 +362,17 @@ MultiTree.prototype.get = function (name, opts, cb) {
   this._treesWrapper(name, true, function (err, trees) {
     if (err) return cb(err)
 
-    console.log('HERE in get, name:', name)
 
     // If the content path is within a symlink, traverse into that link.
     if (trees.length > self._parents.length) {
       if (trees.length - self._parents.length > 1) {
         return cb(new Error('Trying to get from multiple symlinks.'))
       }
-      console.log('GOING INTO LINK')
       return trees[trees.length - 1].get(relative(name, trees[trees.length - 1]), opts, cb)
     }
 
     // Otherwise, first check if the content is in our local tree.
     self._readNode(name, false, function (selfErr, selfNode) {
-      console.log('READ NODE:', selfNode, 'trees.length:', trees.length)
       if (selfErr && !selfErr.notFound) return cb(selfErr)
       if (selfNode) return onnode(selfNode)
 
@@ -409,7 +380,6 @@ MultiTree.prototype.get = function (name, opts, cb) {
         if (selfErr) return cb(selfErr)
       }
 
-      console.log('content NOT LOCAL')
 
       // If the content isn't local, check the parents.
       map(trees, function (tree, next) {
