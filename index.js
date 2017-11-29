@@ -70,6 +70,7 @@ MultiTree.prototype._entriesPath = function (path) {
 MultiTree.prototype._inflateTree = function (key, version, opts, cb) {
   if (typeof opts === 'function') return this._inflateTree(key, version, {}, opts)
   var mergedOpts = Object.assign({}, this.opts, opts)
+  mergedOpts.parents = null
 
   console.log('INFLATING TREE WITH KEY:', key)
   var t = MultiTree(this._factory, key, mergedOpts)
@@ -106,9 +107,10 @@ MultiTree.prototype._getParentTrees = function (cb) {
       self._parents = []
 
       map(parentNames, function (name, next) {
+        console.log('name in getParentTrees:', name)
         self._readNode(p.join(PARENTS_ROOT, name), false, function (err, link) {
           if (err) return next(err)
-          return next(null, link)
+          return next(null, self._extractData(link, true))
         })
       }, function (err, links) {
         if (err) return cb(err)
@@ -121,6 +123,7 @@ MultiTree.prototype._getParentTrees = function (cb) {
   function onlinks () {
     if (self._parents.length === 0) return cb()
     return map(self._parents, function (parent, next) {
+      console.log('about to call _getTreeForNode with parent:', parent)
       self._getTreeForNode(parent.node, parent.name, true, next)
     }, cb)
   }
@@ -131,6 +134,7 @@ MultiTree.prototype._getTreeForNode = function (node, name, isParent, cb) {
   var self = this
   var link = this.links[node]
   if (link) return onlink(link)
+  console.log('getting tree for node:', node)
   this._readNode(node, true, function (err, outerNode) {
     console.log('in getTreeForNode, node:', node, 'name:', name, 'link:', outerNode)
     if (err && err.notFound) return cb(null)
@@ -186,10 +190,8 @@ MultiTree.prototype._findLinkTrees = function (name, readParents, cb) {
 
 MultiTree.prototype._writeData = function (name, value, isLink, cb) {
   var self = this
-  console.log('HERE')
   this._tree.ready(function (err) {
     if (err) return cb(err)
-    console.log('INSIDE')
     var data
     if (!isLink) {
       data = messages.Node.encode({
@@ -215,7 +217,7 @@ MultiTree.prototype._writeData = function (name, value, isLink, cb) {
   })
 }
 
-MultiTree.prototype._extractData = function (node) {
+MultiTree.prototype._extractData = function (node, keepLink) {
   var value
   switch (node.type) {
     case (messages.Node.Type.DATA):
@@ -225,7 +227,7 @@ MultiTree.prototype._extractData = function (node) {
       var link = messages.LinkNode.decode(node.value)
       this.links[link.node] = link
       console.log('here link:', link)
-      value = link.value
+      value = keepLink ? link : link.value
       break
     default:
       throw new Error('Invalid node type:', node.type)
@@ -235,6 +237,7 @@ MultiTree.prototype._extractData = function (node) {
 
 MultiTree.prototype._readNode = function (name, isNode, cb) {
   var self = this
+  console.log('in _readNode, name:', name)
   this._tree.ready(function (err) {
     if (err) return cb(err)
     console.log('tree is ready')
@@ -327,6 +330,7 @@ MultiTree.prototype.put = function (name, value, cb) {
       })
     }
     if (trees.length > 1) return cb(new Error('Trying to write to multiple symlinks.'))
+    console.log('WRITING TO A SYMLINK')
     return trees[0].put(relative(name, trees[0]), value, cb)
   })
 }
@@ -373,6 +377,7 @@ MultiTree.prototype._list = function (name, opts, cb) {
 }
 
 MultiTree.prototype.list = function (name, opts, cb) {
+  console.log('LIST')
   return this._list(this._entriesPath(name), opts, cb)
 }
 
