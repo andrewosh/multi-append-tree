@@ -3,12 +3,12 @@
 
 multi-append-tree is a wrapper around an [append-tree](https://github.com/mafintosh/append-tree) that supports nesting other append-trees within the main tree (or multi-append-trees). Tree, tree, tree:
 
-1. Lightweight __forking__ and __layering__ operations are supported through a `parents` relationship. If an entry can't be found in the main tree, the search will recurse into all parents.
+1. Lightweight __forking__ and __layering__ operations are supported through a `parents` relationship. If an entry can't be found in the main tree, the search will traverse into all parents.
 2. Cross-tree __symlinking__ (of both live and versioned trees) is supported through special `Link` entries. 
 
 No external indexing is required, and subtrees are instantiated dynamically when first needed.
 
-Oh, and since multiple parents are allowed, `get` or `list` operations might return conflicting entries -- resolution is left to you! This might be confusing, but allowing for multiple parents is useful during merges. 
+Since multiple parents are allowed, `get` or `list` operations might return conflicting entries -- resolution is left to you! This might be confusing, but allowing for multiple parents is useful during merges. 
 
 ### Installation
 `npm i multi-append-tree`
