@@ -183,21 +183,18 @@ MultiTree.prototype._writeData = function (name, value, isLink, cb) {
   this._tree.ready(function (err) {
     if (err) return cb(err)
     var data
-    console.log('value:', value)
     if (!isLink) {
       data = messages.Node.encode({
         type: messages.Node.Type.DATA,
         value: self._codec.encode(value)
       })
     } else {
-      console.log('its a link')
       Object.assign(value, {
         node: self._tree.version + 1,
         name: name,
         key: datEncoding.decode(value.key),
         value: self._codec.encode(value.value)
       })
-      console.log('value is now:', value)
       data = messages.Node.encode({
         type: messages.Node.Type.LINK,
         value: messages.LinkNode.encode(value)
@@ -283,7 +280,6 @@ MultiTree.prototype.link = function (name, target, opts, cb) {
   target.path = target.path || opts.path || '/'
 
   name = self._entriesPath(name)
-  console.log('target is now:', target)
   this.ready(function (err) {
     if (err) return cb(err)
     return self._writeData(name, target, true, cb)
@@ -372,7 +368,6 @@ MultiTree.prototype.get = function (name, opts, cb) {
   this._treesWrapper(name, true, function (err, trees) {
     if (err) return cb(err)
 
-    console.log('In MAT, getting:', name, 'in tree with key:', self.key, 'version:', self.version)
     // If the content path is within a symlink, traverse into that link.
     if (trees.length > self._parents.length) {
       if (trees.length - self._parents.length > 1) {
