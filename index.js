@@ -183,18 +183,21 @@ MultiTree.prototype._writeData = function (name, value, isLink, cb) {
   this._tree.ready(function (err) {
     if (err) return cb(err)
     var data
+    console.log('value:', value)
     if (!isLink) {
       data = messages.Node.encode({
         type: messages.Node.Type.DATA,
         value: self._codec.encode(value)
       })
     } else {
+      console.log('its a link')
       Object.assign(value, {
         node: self._tree.version + 1,
         name: name,
         key: datEncoding.decode(value.key),
         value: self._codec.encode(value.value)
       })
+      console.log('value is now:', value)
       data = messages.Node.encode({
         type: messages.Node.Type.LINK,
         value: messages.LinkNode.encode(value)
@@ -223,7 +226,6 @@ MultiTree.prototype._extractData = function (node, keepLink) {
 
 MultiTree.prototype._readNode = function (name, isNode, cb) {
   var self = this
-  console.log('reading:', name, 'isNode:', isNode)
   this._tree.ready(function (err) {
     if (err) return cb(err)
     if (!isNode) {
@@ -232,12 +234,9 @@ MultiTree.prototype._readNode = function (name, isNode, cb) {
         return onnode(value)
       })
     }
-    console.log('about to get!')
     self._tree.feed.get(name, function (err, bytes) {
-      console.log('err:', err)
       if (err) return cb(err)
       var outer = atMessages.Node.decode(bytes)
-      console.log('outer:', outer)
       return onnode(outer.value)
     })
   })
@@ -284,6 +283,7 @@ MultiTree.prototype.link = function (name, target, opts, cb) {
   target.path = target.path || opts.path || '/'
 
   name = self._entriesPath(name)
+  console.log('target is now:', target)
   this.ready(function (err) {
     if (err) return cb(err)
     return self._writeData(name, target, true, cb)
@@ -372,6 +372,7 @@ MultiTree.prototype.get = function (name, opts, cb) {
   this._treesWrapper(name, true, function (err, trees) {
     if (err) return cb(err)
 
+    console.log('In MAT, getting:', name, 'in tree with key:', self.key, 'version:', self.version)
     // If the content path is within a symlink, traverse into that link.
     if (trees.length > self._parents.length) {
       if (trees.length - self._parents.length > 1) {
@@ -383,7 +384,7 @@ MultiTree.prototype.get = function (name, opts, cb) {
     // Otherwise, first check if the content is in our local tree.
     self._readNode(name, false, function (selfErr, selfNode) {
       if (selfErr && !selfErr.notFound) return cb(selfErr)
-      if (selfNode) return onnode(selfNode)
+      if (selfNode) return cb(null, self._extractData(selfNode), self.key)
 
       if (trees.length === 0) {
         if (selfErr) return cb(selfErr)
@@ -397,23 +398,26 @@ MultiTree.prototype.get = function (name, opts, cb) {
         })
       }, function (err, parentResults) {
         if (err) return cb(err)
-        var nonNullResults = parentResults.filter(function (x) { return x })
-        if (nonNullResults.length === 0) return cb(selfErr)
+
+        // Format the results so each entry can be mapped to its corresponding parent.
+        // TODO: reduce allocations
+        var nonNullResults = []
+        var parentIndices = []
+        for (var i = 0; i < parentResults.length; i++) {
+          if (!parentResults[i]) continue
+          nonNullResults.push(parentResults[i])
+          parentIndices.push(self._parents[i])
+        }
+
         if (nonNullResults.length === 1) {
           // No possible conflict -- return single result.
-          return cb(null, nonNullResults[0])
+          return cb(null, nonNullResults[0], parentIndices[0])
         }
-        // Ensure that the result list is in parent order so that the user can trace
-        // a result back to its corresponding parent.
         // Conflict resolution handled by user.
-        return cb(null, nonNullResults)
+        return cb(null, nonNullResults, parentIndices)
       })
     })
   })
-
-  function onnode (node) {
-    return cb(null, self._extractData(node))
-  }
 }
 
 MultiTree.prototype.checkout = function (seq, opts) {
